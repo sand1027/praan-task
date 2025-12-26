@@ -180,10 +180,14 @@ class SchedulerService {
       
       // Create end cron job
       const endJob = cron.schedule(endCronExpression, async () => {
+        console.log(`[END CRON] End job triggered for schedule ${_id} at ${new Date().toISOString()}`);
+        
         // Double-check that today is the correct day (timezone-aware)
         const now = new Date();
         const timezone = process.env.TIMEZONE || 'UTC';
         const currentDay = now.toLocaleString('en-US', { timeZone: timezone, weekday: 'long' });
+        
+        console.log(`[END CRON] Current day: ${currentDay}, Expected day: ${day}`);
         
         if (currentDay !== day) {
           logger.warn(`End schedule ${_id} triggered but today is ${currentDay}, not ${day}. Skipping execution.`);
@@ -194,41 +198,11 @@ class SchedulerService {
         logger.info(`Current time in ${timezone}: ${now.toLocaleString('en-US', { timeZone: timezone })}`);
         
         try {
-          // Get device state to check if other schedules are active
-          const deviceState = await DeviceState.findOne({ deviceId });
+          // Always turn off device when schedule ends (simplified logic)
+          logger.info(`Schedule ${_id} ended - turning off device`);
+          await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
           
-          if (!deviceState || !deviceState.scheduleState) {
-            logger.warn(`Device state or schedule state not found for ${deviceId}, turning off device`);
-            await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
-            return;
-          }
-          
-          // Decrement active schedule count
-          deviceState.scheduleState.activeScheduleCount = Math.max(0, deviceState.scheduleState.activeScheduleCount - 1);
-          logger.info(`Schedule ended. Active schedules remaining: ${deviceState.scheduleState.activeScheduleCount}`);
-          
-          // Only turn off device if this was the last active schedule
-          if (deviceState.scheduleState.activeScheduleCount === 0) {
-            // Assignment requirement: "after the endTime, turns off the device"
-            logger.info(`Last schedule ended - turning off device as per assignment`);
-            await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
-            
-            // Clear schedule state
-            deviceState.scheduleState = {
-              originalFanSpeed: null,
-              originalPowerOn: null,
-              activeScheduleCount: 0
-            };
-          } else {
-            // Other schedules are still active, don't change device state
-            logger.info(`Other schedules still active - keeping device state unchanged`);
-          }
-          
-          await deviceState.save();
           logger.info(`End schedule ${_id} executed successfully`);
-          
-          // Set schedule isActive to false when it completes
-          await Schedule.findByIdAndUpdate(_id, { isActive: false });
         } catch (error) {
           logger.error(`Error executing end schedule ${_id}:`, error);
         }

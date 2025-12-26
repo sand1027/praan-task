@@ -195,29 +195,36 @@ router.get('/status/:deviceId', async (req, res) => {
 });
 
 /**
- * POST /api/preclean/force-complete/:deviceId
- * Manually force completion of expired pre-cleans (for debugging)
+ * DELETE /api/preclean/:preCleanId
+ * Delete a specific pre-clean by ID
  */
-router.post('/force-complete/:deviceId', async (req, res) => {
+router.delete('/:preCleanId', async (req, res) => {
   try {
-    const { deviceId } = req.params;
+    const { preCleanId } = req.params;
     
-    const completedCount = await preCleanService.forceCompleteExpired(deviceId);
+    const deletedPreClean = await preCleanService.deletePreClean(preCleanId);
+    
+    if (!deletedPreClean) {
+      return res.status(404).json({
+        success: false,
+        error: 'Pre-clean not found'
+      });
+    }
     
     res.json({
       success: true,
-      message: `Completed ${completedCount} expired pre-cleans`,
+      message: 'Pre-clean deleted successfully',
       data: {
-        deviceId,
-        completedCount
+        preCleanId,
+        deviceId: deletedPreClean.deviceId
       }
     });
     
   } catch (error) {
-    logger.error('Error force completing pre-cleans:', error);
+    logger.error('Error deleting pre-clean:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to force complete pre-cleans',
+      error: 'Failed to delete pre-clean',
       message: error.message
     });
   }

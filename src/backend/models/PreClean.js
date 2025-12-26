@@ -1,13 +1,10 @@
 /**
  * MongoDB Schema for PreClean Operations
- * 
- * This stores all pre-clean operations with their state and relationships
  */
 
 const mongoose = require('mongoose');
 
 const preCleanSchema = new mongoose.Schema({
-  // Unique identifier for this pre-clean operation
   preCleanId: {
     type: String,
     required: true,
@@ -15,14 +12,12 @@ const preCleanSchema = new mongoose.Schema({
     index: true
   },
   
-  // Device this pre-clean applies to
   deviceId: {
     type: String,
     required: true,
     index: true
   },
   
-  // Pre-clean configuration
   targetFanSpeed: {
     type: Number,
     required: true,
@@ -34,10 +29,9 @@ const preCleanSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 1,
-    max: 3600 // seconds
+    max: 3600
   },
   
-  // State before pre-clean started
   previousState: {
     fanSpeed: {
       type: Number,
@@ -51,7 +45,6 @@ const preCleanSchema = new mongoose.Schema({
     }
   },
   
-  // Timing information
   startedAt: {
     type: Date,
     required: true,
@@ -67,60 +60,11 @@ const preCleanSchema = new mongoose.Schema({
     type: Date
   },
   
-  // Status tracking
   status: {
     type: String,
-    enum: ['active', 'completed', 'cancelled', 'expired'],
+    enum: ['active', 'completed', 'cancelled'],
     default: 'active',
     index: true
-  },
-  
-  // Relationships with other operations
-  relationships: {
-    // Active schedules when this pre-clean started
-    activeSchedules: [{
-      scheduleId: String,
-      fanSpeed: Number,
-      startTime: String,
-      endTime: String
-    }],
-    
-    // Other pre-cleans that were active
-    overlappingPreCleans: [String]
-  },
-  
-  // Execution details
-  execution: {
-    commandSent: {
-      type: Boolean,
-      default: false
-    },
-    commandAcknowledged: {
-      type: Boolean,
-      default: false
-    },
-    restoreCommandSent: {
-      type: Boolean,
-      default: false
-    },
-    restoreCommandAcknowledged: {
-      type: Boolean,
-      default: false
-    },
-    errorMessage: String
-  },
-  
-  // Source of the pre-clean request
-  source: {
-    type: String,
-    enum: ['manual', 'api', 'schedule', 'automation'],
-    default: 'manual'
-  },
-  
-  // User or system that initiated this pre-clean
-  initiatedBy: {
-    type: String,
-    default: 'system'
   }
 }, {
   timestamps: true
@@ -129,7 +73,6 @@ const preCleanSchema = new mongoose.Schema({
 // Indexes for efficient queries
 preCleanSchema.index({ deviceId: 1, status: 1 });
 preCleanSchema.index({ scheduledEndAt: 1, status: 1 });
-preCleanSchema.index({ startedAt: -1 });
 
 // Static methods
 preCleanSchema.statics.findActiveByDevice = function(deviceId) {
@@ -154,15 +97,6 @@ preCleanSchema.methods.markCancelled = function() {
   this.status = 'cancelled';
   this.actualEndAt = new Date();
   return this.save();
-};
-
-preCleanSchema.methods.isExpired = function() {
-  return new Date() > this.scheduledEndAt;
-};
-
-preCleanSchema.methods.getRemainingSeconds = function() {
-  const remaining = this.scheduledEndAt - new Date();
-  return Math.max(0, Math.ceil(remaining / 1000));
 };
 
 const PreClean = mongoose.model('PreClean', preCleanSchema);

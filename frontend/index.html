@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Purifier Control Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        /* Fan Animation */
+        .fan-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .fan {
+            width: 200px;
+            height: 200px;
+            position: relative;
+            margin: 20px auto;
+        }
+
+        .fan-blade {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            animation: spin 2s linear infinite;
+            animation-play-state: paused;
+        }
+
+        .fan-blade.speed-0 { animation-play-state: paused; }
+        .fan-blade.speed-1 { animation-play-state: running; animation-duration: 3s; }
+        .fan-blade.speed-2 { animation-play-state: running; animation-duration: 2s; }
+        .fan-blade.speed-3 { animation-play-state: running; animation-duration: 1.5s; }
+        .fan-blade.speed-4 { animation-play-state: running; animation-duration: 1s; }
+        .fan-blade.speed-5 { animation-play-state: running; animation-duration: 0.5s; }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .blade {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 50% 0 50% 0;
+            top: 50%;
+            left: 50%;
+            transform-origin: 0% 0%;
+        }
+
+        .blade:nth-child(1) { transform: rotate(0deg) translate(-40px, -40px); }
+        .blade:nth-child(2) { transform: rotate(90deg) translate(-40px, -40px); }
+        .blade:nth-child(3) { transform: rotate(180deg) translate(-40px, -40px); }
+        .blade:nth-child(4) { transform: rotate(270deg) translate(-40px, -40px); }
+
+        .fan-center {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: #333;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        .status {
+            text-align: center;
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .status.online { color: #10b981; }
+        .status.offline { color: #ef4444; }
+
+        /* Sensor Data */
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .sensor-item {
+            background: #f3f4f6;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .sensor-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .sensor-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .sensor-unit {
+            font-size: 0.8em;
+            color: #999;
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-group label {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .speed-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-speed {
+            flex: 1;
+            background: #e5e7eb;
+            color: #333;
+        }
+
+        .btn-speed.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-speed:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn-primary {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+
+        input, select {
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        /* Schedule List */
+        .schedule-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .schedule-item {
+            background: #f3f4f6;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .schedule-info {
+            flex: 1;
+        }
+
+        .schedule-day {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .schedule-time {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.9em;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        /* Connection Status */
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            z-index: 1000;
+        }
+
+        .connection-status.connected {
+            background: #10b981;
+            color: white;
+        }
+
+        .connection-status.disconnected {
+            background: #ef4444;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">Connecting...</div>
+
+    <div class="container">
+        <div class="header">
+            <h1>Air Purifier Control Dashboard</h1>
+            <p>Real-time IoT Device Management</p>
+        </div>
+
+        <div class="dashboard">
+            <!-- Device Status Card -->
+            <div class="card">
+                <h2>Device Status</h2>
+                <div class="fan-container">
+                    <div class="fan">
+                        <div class="fan-blade" id="fanBlade">
+                            <div class="blade"></div>
+                            <div class="blade"></div>
+                            <div class="blade"></div>
+                            <div class="blade"></div>
+                        </div>
+                        <div class="fan-center"></div>
+                    </div>
+                    <div class="status" id="deviceStatus">Loading...</div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.9em; color: #666;">Fan Speed</div>
+                        <div style="font-size: 2em; font-weight: bold; color: #667eea;" id="fanSpeedDisplay">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sensor Data Card -->
+            <div class="card">
+                <h2>Sensor Data</h2>
+                <div class="sensor-grid">
+                    <div class="sensor-item">
+                        <div class="sensor-label">Temperature</div>
+                        <div class="sensor-value" id="temperature">--</div>
+                        <div class="sensor-unit">°C</div>
+                    </div>
+                    <div class="sensor-item">
+                        <div class="sensor-label">Humidity</div>
+                        <div class="sensor-value" id="humidity">--</div>
+                        <div class="sensor-unit">%</div>
+                    </div>
+                    <div class="sensor-item">
+                        <div class="sensor-label">PM2.5</div>
+                        <div class="sensor-value" id="pm25">--</div>
+                        <div class="sensor-unit">μg/m³</div>
+                    </div>
+                    <div class="sensor-item">
+                        <div class="sensor-label">PM1.0</div>
+                        <div class="sensor-value" id="pm1">--</div>
+                        <div class="sensor-unit">μg/m³</div>
+                    </div>
+                    <div class="sensor-item">
+                        <div class="sensor-label">PM10</div>
+                        <div class="sensor-value" id="pm10">--</div>
+                        <div class="sensor-unit">μg/m³</div>
+                    </div>
+                    <div class="sensor-item">
+                        <div class="sensor-label">VOC</div>
+                        <div class="sensor-value" id="voc">--</div>
+                        <div class="sensor-unit">ppb</div>
+                    </div>
+                    <div class="sensor-item">
+                        <div class="sensor-label">Sound</div>
+                        <div class="sensor-value" id="sound">--</div>
+                        <div class="sensor-unit">dB</div>
+                    </div>
+                    <div class="sensor-item">
+                        <div class="sensor-label">Network</div>
+                        <div class="sensor-value" id="network">--</div>
+                        <div class="sensor-unit">%</div>
+                    </div>
+                    <div class="sensor-item">
+                        <div class="sensor-label">Last Update</div>
+                        <div class="sensor-value" style="font-size: 0.8em;" id="lastUpdate">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Manual Control Card -->
+            <div class="card">
+                <h2>Manual Control</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Fan Speed</label>
+                        <div class="speed-buttons">
+                            <button class="btn btn-speed" onclick="setFanSpeed(0)">OFF</button>
+                            <button class="btn btn-speed" onclick="setFanSpeed(1)">1</button>
+                            <button class="btn btn-speed" onclick="setFanSpeed(2)">2</button>
+                            <button class="btn btn-speed" onclick="setFanSpeed(3)">3</button>
+                            <button class="btn btn-speed" onclick="setFanSpeed(4)">4</button>
+                            <button class="btn btn-speed" onclick="setFanSpeed(5)">5</button>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Pre-Clean (Temporary Boost)</label>
+                        <div style="display: flex; gap: 10px;">
+                            <select id="precleanMode" style="flex: 1;">
+                                <option value="3">Mode 3</option>
+                                <option value="4">Mode 4</option>
+                                <option value="5" selected>Mode 5 (Max)</option>
+                            </select>
+                            <input type="number" id="precleanDuration" placeholder="Duration (min)" value="5" min="1" max="60" style="flex: 1;">
+                            <button class="btn btn-warning" onclick="startPreClean()">Start</button>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-danger" onclick="turnOff()">Turn Off Device</button>
+                </div>
+            </div>
+
+            <!-- Schedule Management Card -->
+            <div class="card">
+                <h2>Schedule Management</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Create New Schedule</label>
+                        <select id="scheduleDay">
+                            <option value="Monday">Monday</option>
+                            <option value="Tuesday">Tuesday</option>
+                            <option value="Wednesday">Wednesday</option>
+                            <option value="Thursday">Thursday</option>
+                            <option value="Friday">Friday</option>
+                            <option value="Saturday">Saturday</option>
+                            <option value="Sunday">Sunday</option>
+                        </select>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="time" id="scheduleStart" value="09:00" style="flex: 1;">
+                            <input type="time" id="scheduleEnd" value="17:00" style="flex: 1;">
+                        </div>
+                        <select id="scheduleFanSpeed">
+                            <option value="1">Fan Speed 1</option>
+                            <option value="2">Fan Speed 2</option>
+                            <option value="3" selected>Fan Speed 3</option>
+                            <option value="4">Fan Speed 4</option>
+                            <option value="5">Fan Speed 5</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="createSchedule()">Create Schedule</button>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Active Schedules</label>
+                        <div class="schedule-list" id="scheduleList">
+                            <div class="loading">Loading schedules...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        const DEVICE_ID = 'AIR_PURIFIER_001';
+        let currentFanSpeed = 0;
+
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            status.className = 'connection-status ' + (connected ? 'connected' : 'disconnected');
+            status.textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        // Fetch device state
+        async function fetchDeviceState() {
+            try {
+                const response = await fetch(`${API_BASE}/device/${DEVICE_ID}/state`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const state = data.data;
+                    currentFanSpeed = state.currentFanSpeed;
+                    
+                    // Update fan animation
+                    const fanBlade = document.getElementById('fanBlade');
+                    fanBlade.className = `fan-blade speed-${currentFanSpeed}`;
+                    
+                    // Update fan speed display
+                    document.getElementById('fanSpeedDisplay').textContent = currentFanSpeed;
+                    
+                    // Update status
+                    const statusEl = document.getElementById('deviceStatus');
+                    statusEl.textContent = state.isOnline ? 'Online' : 'Offline';
+                    statusEl.className = 'status ' + (state.isOnline ? 'online' : 'offline');
+                    
+                    // Update active button
+                    document.querySelectorAll('.btn-speed').forEach((btn, idx) => {
+                        btn.classList.toggle('active', idx === currentFanSpeed);
+                    });
+                    
+                    updateConnectionStatus(true);
+                }
+            } catch (error) {
+                console.error('Error fetching device state:', error);
+                updateConnectionStatus(false);
+            }
+        }
+
+        // Fetch latest sensor data
+        async function fetchSensorData() {
+            try {
+                const response = await fetch(`${API_BASE}/device/${DEVICE_ID}/latest`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const sensor = data.data;
+                    document.getElementById('temperature').textContent = sensor.temperature.toFixed(1);
+                    document.getElementById('humidity').textContent = sensor.humidity.toFixed(1);
+                    document.getElementById('pm25').textContent = sensor.pm25.toFixed(1);
+                    document.getElementById('pm1').textContent = sensor.pm1.toFixed(1);
+                    document.getElementById('pm10').textContent = sensor.pm10.toFixed(1);
+                    document.getElementById('voc').textContent = sensor.voc.toFixed(1);
+                    document.getElementById('sound').textContent = sensor.sound.toFixed(1);
+                    document.getElementById('network').textContent = sensor.networkStrength.toFixed(0);
+                    
+                    const time = new Date(sensor.timestamp);
+                    document.getElementById('lastUpdate').textContent = time.toLocaleTimeString();
+                }
+            } catch (error) {
+                console.error('Error fetching sensor data:', error);
+            }
+        }
+
+        // Set fan speed
+        async function setFanSpeed(speed) {
+            try {
+                // This would normally call the backend API to send MQTT command
+                // For now, we'll simulate it by directly updating
+                alert(`Setting fan speed to ${speed}. In production, this sends MQTT command to device.`);
+                
+                // Update UI immediately
+                currentFanSpeed = speed;
+                const fanBlade = document.getElementById('fanBlade');
+                fanBlade.className = `fan-blade speed-${speed}`;
+                document.getElementById('fanSpeedDisplay').textContent = speed;
+                
+                document.querySelectorAll('.btn-speed').forEach((btn, idx) => {
+                    btn.classList.toggle('active', idx === speed);
+                });
+            } catch (error) {
+                console.error('Error setting fan speed:', error);
+                alert('Failed to set fan speed');
+            }
+        }
+
+        // Start pre-clean
+        async function startPreClean() {
+            const mode = document.getElementById('precleanMode').value;
+            const duration = document.getElementById('precleanDuration').value;
+            
+            try {
+                const response = await fetch(`${API_BASE}/preclean`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        deviceId: DEVICE_ID,
+                        fanMode: parseInt(mode),
+                        duration: parseInt(duration)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`Pre-clean started! Fan will run at mode ${mode} for ${duration} minutes.`);
+                    fetchDeviceState();
+                } else {
+                    alert('Failed to start pre-clean: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error starting pre-clean:', error);
+                alert('Failed to start pre-clean');
+            }
+        }
+
+        // Turn off device
+        async function turnOff() {
+            if (confirm('Are you sure you want to turn off the device?')) {
+                setFanSpeed(0);
+            }
+        }
+
+        // Create schedule
+        async function createSchedule() {
+            const day = document.getElementById('scheduleDay').value;
+            const startTime = document.getElementById('scheduleStart').value;
+            const endTime = document.getElementById('scheduleEnd').value;
+            const fanSpeed = document.getElementById('scheduleFanSpeed').value;
+            
+            try {
+                const response = await fetch(`${API_BASE}/schedule`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        deviceId: DEVICE_ID,
+                        day,
+                        startTime,
+                        endTime,
+                        fanSpeed: parseInt(fanSpeed)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Schedule created successfully!');
+                    fetchSchedules();
+                } else {
+                    alert('Failed to create schedule: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error creating schedule:', error);
+                alert('Failed to create schedule');
+            }
+        }
+
+        // Fetch schedules
+        async function fetchSchedules() {
+            try {
+                const response = await fetch(`${API_BASE}/schedule/${DEVICE_ID}`);
+                const data = await response.json();
+                
+                const listEl = document.getElementById('scheduleList');
+                
+                if (data.success && data.data.length > 0) {
+                    listEl.innerHTML = data.data.map(schedule => `
+                        <div class="schedule-item">
+                            <div class="schedule-info">
+                                <div class="schedule-day">${schedule.day}</div>
+                                <div class="schedule-time">${schedule.startTime} - ${schedule.endTime} | Speed: ${schedule.fanSpeed}</div>
+                            </div>
+                            <button class="btn btn-danger btn-small" onclick="deleteSchedule('${schedule._id}')">Delete</button>
+                        </div>
+                    `).join('');
+                } else {
+                    listEl.innerHTML = '<div class="loading">No schedules found</div>';
+                }
+            } catch (error) {
+                console.error('Error fetching schedules:', error);
+                document.getElementById('scheduleList').innerHTML = '<div class="loading">Error loading schedules</div>';
+            }
+        }
+
+        // Delete schedule
+        async function deleteSchedule(scheduleId) {
+            if (confirm('Are you sure you want to delete this schedule?')) {
+                try {
+                    const response = await fetch(`${API_BASE}/schedule/${scheduleId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert('Schedule deleted successfully!');
+                        fetchSchedules();
+                    } else {
+                        alert('Failed to delete schedule: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Error deleting schedule:', error);
+                    alert('Failed to delete schedule');
+                }
+            }
+        }
+
+        // Initialize and start polling
+        function init() {
+            fetchDeviceState();
+            fetchSensorData();
+            fetchSchedules();
+            
+            // Poll every 10 seconds (reduced frequency)
+            setInterval(() => {
+                fetchDeviceState();
+                fetchSensorData();
+            }, 10000);
+            
+            // Poll schedules every 60 seconds
+            setInterval(fetchSchedules, 60000);
+        }
+
+        // Start when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
+

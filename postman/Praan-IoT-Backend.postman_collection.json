@@ -1,0 +1,447 @@
+{
+  "info": {
+    "name": "Praan IoT Backend API",
+    "description": "Complete API collection for Praan IoT Backend - Air Purifier Management System",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "device_id",
+      "value": "AIR_PURIFIER_001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Check if the backend server is running and all services are connected"
+      }
+    },
+    {
+      "name": "API Documentation",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": ["{{base_url}}"],
+          "path": [""]
+        },
+        "description": "Get list of all available API endpoints"
+      }
+    },
+    {
+      "name": "Schedule API",
+      "item": [
+        {
+          "name": "Create Schedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"day\": \"Monday\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"17:00\",\n  \"fanSpeed\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/schedule",
+              "host": ["{{base_url}}"],
+              "path": ["api", "schedule"]
+            },
+            "description": "Create a recurring schedule for a device. The device will turn on at startTime with specified fan speed and turn off at endTime."
+          }
+        },
+        {
+          "name": "Get All Schedules for Device",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/schedule/{{device_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "schedule", "{{device_id}}"]
+            },
+            "description": "Get all active schedules for a specific device"
+          }
+        },
+        {
+          "name": "Get Schedule by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/schedule/detail/:scheduleId",
+              "host": ["{{base_url}}"],
+              "path": ["api", "schedule", "detail", ":scheduleId"],
+              "variable": [
+                {
+                  "key": "scheduleId",
+                  "value": "PASTE_SCHEDULE_ID_HERE"
+                }
+              ]
+            },
+            "description": "Get details of a specific schedule by its ID"
+          }
+        },
+        {
+          "name": "Update Schedule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fanSpeed\": 4,\n  \"startTime\": \"10:00\",\n  \"endTime\": \"18:00\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/schedule/:scheduleId",
+              "host": ["{{base_url}}"],
+              "path": ["api", "schedule", ":scheduleId"],
+              "variable": [
+                {
+                  "key": "scheduleId",
+                  "value": "PASTE_SCHEDULE_ID_HERE"
+                }
+              ]
+            },
+            "description": "Update an existing schedule"
+          }
+        },
+        {
+          "name": "Delete Schedule",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/schedule/:scheduleId",
+              "host": ["{{base_url}}"],
+              "path": ["api", "schedule", ":scheduleId"],
+              "variable": [
+                {
+                  "key": "scheduleId",
+                  "value": "PASTE_SCHEDULE_ID_HERE"
+                }
+              ]
+            },
+            "description": "Delete a schedule and stop its cron job"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pre-Clean API",
+      "item": [
+        {
+          "name": "Start Pre-Clean",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": 5,\n  \"seconds\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/preclean",
+              "host": ["{{base_url}}"],
+              "path": ["api", "preclean"]
+            },
+            "description": "Start a temporary fan override. Supports 'minutes', 'seconds', or both. Device will run at specified fan mode for the duration, then restore to previous state. Examples: {minutes: 2}, {seconds: 30}, {minutes: 1, seconds: 30}"
+          }
+        },
+        {
+          "name": "Start Pre-Clean (Minutes Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": 5,\n  \"minutes\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/preclean",
+              "host": ["{{base_url}}"],
+              "path": ["api", "preclean"]
+            },
+            "description": "Pre-clean with minutes only (2 minutes = 120 seconds)"
+          }
+        },
+        {
+          "name": "Start Pre-Clean (Minutes + Seconds)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": 5,\n  \"minutes\": 1,\n  \"seconds\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/preclean",
+              "host": ["{{base_url}}"],
+              "path": ["api", "preclean"]
+            },
+            "description": "Pre-clean with both minutes and seconds (1 min 30 sec = 90 seconds total)"
+          }
+        },
+        {
+          "name": "Cancel Pre-Clean",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/preclean/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "preclean", "cancel"]
+            },
+            "description": "Cancel an active pre-clean and immediately restore previous state"
+          }
+        },
+        {
+          "name": "Get Pre-Clean Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/preclean/status/{{device_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "preclean", "status", "{{device_id}}"]
+            },
+            "description": "Get current pre-clean status for a device"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Device Control API",
+      "item": [
+        {
+          "name": "Turn Device ON",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"powerOn\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/control/power",
+              "host": ["{{base_url}}"],
+              "path": ["api", "control", "power"]
+            },
+            "description": "Turn the device ON (starts with fan speed 2)"
+          }
+        },
+        {
+          "name": "Turn Device OFF",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"powerOn\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/control/power",
+              "host": ["{{base_url}}"],
+              "path": ["api", "control", "power"]
+            },
+            "description": "Turn the device OFF"
+          }
+        },
+        {
+          "name": "Set Fan Speed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanSpeed\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/control/fan",
+              "host": ["{{base_url}}"],
+              "path": ["api", "control", "fan"]
+            },
+            "description": "Set fan speed (1-5). This also turns the device ON."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Device API",
+      "item": [
+        {
+          "name": "Get Device Sensor Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/device/{{device_id}}/data?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device", "{{device_id}}", "data"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Number of records to return"
+                },
+                {
+                  "key": "startDate",
+                  "value": "2024-01-01T00:00:00Z",
+                  "disabled": true,
+                  "description": "Start date for filtering (ISO format)"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2024-12-31T23:59:59Z",
+                  "disabled": true,
+                  "description": "End date for filtering (ISO format)"
+                }
+              ]
+            },
+            "description": "Get historical sensor data for a device with optional date filtering"
+          }
+        },
+        {
+          "name": "Get Latest Sensor Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/device/{{device_id}}/latest",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device", "{{device_id}}", "latest"]
+            },
+            "description": "Get the most recent sensor reading for a device"
+          }
+        },
+        {
+          "name": "Get Device State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/device/{{device_id}}/state",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device", "{{device_id}}", "state"]
+            },
+            "description": "Get current state of a device (fan speed, power status, online status, etc.)"
+          }
+        },
+        {
+          "name": "Get Command History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/device/{{device_id}}/commands?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device", "{{device_id}}", "commands"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Number of commands to return"
+                }
+              ]
+            },
+            "description": "Get command history for a device"
+          }
+        },
+        {
+          "name": "Get Device Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/device/{{device_id}}/statistics?hours=24",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device", "{{device_id}}", "statistics"],
+              "query": [
+                {
+                  "key": "hours",
+                  "value": "24",
+                  "description": "Number of hours to calculate statistics for"
+                }
+              ]
+            },
+            "description": "Get statistical summary of sensor data (min, max, avg) for a time period"
+          }
+        },
+        {
+          "name": "Get All Devices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/device/list/all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device", "list", "all"]
+            },
+            "description": "Get list of all registered devices"
+          }
+        }
+      ]
+    }
+  ]
+}
+

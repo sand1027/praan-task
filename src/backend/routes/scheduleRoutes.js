@@ -27,23 +27,56 @@ const mqttService = require('../services/mqttService');
  */
 router.post('/', async (req, res) => {
   try {
-    const { deviceId, day, startTime, endTime, fanSpeed } = req.body;
+    const { deviceId, recurrenceType = 'weekly', day, days, interval = 1, customCron, startTime, endTime, fanSpeed } = req.body;
     
     // Validate required fields
-    if (!deviceId || !day || !startTime || !endTime || !fanSpeed) {
+    if (!deviceId || !startTime || !endTime || !fanSpeed) {
       return res.status(400).json({
         success: false,
         error: 'Missing required fields',
-        required: ['deviceId', 'day', 'startTime', 'endTime', 'fanSpeed']
+        required: ['deviceId', 'startTime', 'endTime', 'fanSpeed']
       });
     }
     
-    // Validate day
+    // Validate recurrence type
+    const validRecurrenceTypes = ['daily', 'weekly', 'monthly', 'custom'];
+    if (!validRecurrenceTypes.includes(recurrenceType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid recurrence type',
+        validTypes: validRecurrenceTypes
+      });
+    }
+    
+    // Validate based on recurrence type
+    if (recurrenceType === 'weekly' && !day && (!days || days.length === 0)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Weekly recurrence requires either day or days array'
+      });
+    }
+    
+    if (recurrenceType === 'custom' && !customCron) {
+      return res.status(400).json({
+        success: false,
+        error: 'Custom recurrence requires customCron expression'
+      });
+    }
+    
+    // Validate day/days
     const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    if (!validDays.includes(day)) {
+    if (day && !validDays.includes(day)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid day',
+        validDays
+      });
+    }
+    
+    if (days && days.some(d => !validDays.includes(d))) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid day in days array',
         validDays
       });
     }
@@ -78,12 +111,16 @@ router.post('/', async (req, res) => {
       });
     }
     
-    logger.info('Creating new schedule:', { deviceId, day, startTime, endTime, fanSpeed });
+    logger.info('Creating new schedule:', { deviceId, recurrenceType, day, days, interval, startTime, endTime, fanSpeed });
     
     // Create schedule using scheduler service
     const schedule = await schedulerService.addSchedule({
       deviceId,
+      recurrenceType,
       day,
+      days,
+      interval,
+      customCron,
       startTime,
       endTime,
       fanSpeed,

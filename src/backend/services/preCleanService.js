@@ -161,16 +161,36 @@ class PreCleanService {
         await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', targetSpeed, 'restore');
         console.log(`[COMPLETE] Restored to most recent pre-clean: ${mostRecentPreClean.fanMode} speed ${targetSpeed}`);
       } else {
-        // No more active pre-cleans - restore to the state this pre-clean saved
-        console.log(`[COMPLETE] No active pre-cleans remaining - restoring to saved state`);
+        // No more active pre-cleans - check if schedule ended while pre-clean was active
+        console.log(`[COMPLETE] No active pre-cleans remaining - checking schedule status`);
         
-        const originalState = preClean.previousState;
-        console.log(`[COMPLETE] Restoring to saved state: Fan Speed ${originalState.fanSpeed}, Power ${originalState.powerOn}`);
+        const deviceState = await DeviceState.findOne({ deviceId: preClean.deviceId });
         
-        if (originalState.powerOn) {
-          await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', originalState.fanSpeed, 'restore');
-        } else {
+        if (deviceState?.scheduleState?.scheduleEnded) {
+          // Schedule ended while pre-clean was active - turn off device
+          console.log(`[COMPLETE] Schedule ended during pre-clean - turning off device`);
           await mqttService.sendCommand(preClean.deviceId, 'turnOff', 0, 'restore');
+          
+          // Clear the schedule ended flag
+          await DeviceState.findOneAndUpdate(
+            { deviceId: preClean.deviceId },
+            { 
+              $unset: { 
+                'scheduleState.scheduleEnded': 1,
+                'scheduleState.scheduleEndedAt': 1
+              }
+            }
+          );
+        } else {
+          // Restore to the state this pre-clean saved
+          const originalState = preClean.previousState;
+          console.log(`[COMPLETE] Restoring to saved state: Fan Speed ${originalState.fanSpeed}, Power ${originalState.powerOn}`);
+          
+          if (originalState.powerOn) {
+            await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', originalState.fanSpeed, 'restore');
+          } else {
+            await mqttService.sendCommand(preClean.deviceId, 'turnOff', 0, 'restore');
+          }
         }
       }
       

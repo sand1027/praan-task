@@ -58,7 +58,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"day\": \"Monday\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"17:00\",\n  \"fanSpeed\": 3\n}"
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"recurrenceType\": \"weekly\",\n  \"day\": \"Monday\",\n  \"startTime\": \"09:00\",\n  \"endTime\": \"17:00\",\n  \"fanSpeed\": 3\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/schedule",

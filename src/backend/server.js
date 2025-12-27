@@ -20,7 +20,6 @@ const scheduleRoutes = require('./routes/scheduleRoutes');
 const precleanRoutes = require('./routes/precleanRoutes');
 const deviceRoutes = require('./routes/deviceRoutes');
 const controlRoutes = require('./routes/controlRoutes');
-const realtimeRoutes = require('./routes/realtimeRoutes');
 
 // ============================================
 // CONFIGURATION

@@ -43,193 +43,167 @@ class SchedulerService {
   }
   
   /**
-   * Create a cron job for a schedule
-   * 
-   * @param {Object} schedule - Schedule document from MongoDB
+   * Create a cron job for a schedule with enhanced recurrence patterns
    */
   createCronJob(schedule) {
     try {
-      const { _id, deviceId, day, startTime, endTime, fanSpeed } = schedule;
-      
-      // Convert day name to cron day number (0 = Sunday, 1 = Monday, etc.)
-      const dayMap = {
-        'Sunday': 0,
-        'Monday': 1,
-        'Tuesday': 2,
-        'Wednesday': 3,
-        'Thursday': 4,
-        'Friday': 5,
-        'Saturday': 6
-      };
-      
-      const cronDay = dayMap[day];
-      
-      // Parse start time (HH:MM)
-      const [startHour, startMinute] = startTime.split(':');
-      
-      // Parse end time (HH:MM)
-      const [endHour, endMinute] = endTime.split(':');
-      
-      // Create cron expression for start time
-      // Format: "minute hour * * day"
-      // Example: "0 9 * * 1" = Every Monday at 9:00 AM
-      const startCronExpression = `${startMinute} ${startHour} * * ${cronDay}`;
-      
-      // Create cron expression for end time
-      const endCronExpression = `${endMinute} ${endHour} * * ${cronDay}`;
+      const { _id, deviceId, recurrenceType, day, days, interval, customCron, startTime, endTime, fanSpeed } = schedule;
       
       logger.info(`Creating cron job for schedule ${_id}`);
       logger.info(`  Device: ${deviceId}`);
-      logger.info(`  Day: ${day}`);
-      logger.info(`  Start: ${startTime} (cron: ${startCronExpression})`);
-      logger.info(`  End: ${endTime} (cron: ${endCronExpression})`);
-      logger.info(`  Fan Speed: ${fanSpeed}`);
+      logger.info(`  Recurrence: ${recurrenceType}`);
+      logger.info(`  Interval: ${interval}`);
       
-      // Create start cron job
-      const startJob = cron.schedule(startCronExpression, async () => {
-        // Double-check that today is the correct day (timezone-aware)
-        const now = new Date();
-        const timezone = process.env.TIMEZONE || 'UTC';
-        const currentDay = now.toLocaleString('en-US', { timeZone: timezone, weekday: 'long' });
-        
-        if (currentDay !== day) {
-          logger.warn(`Schedule ${_id} triggered but today is ${currentDay}, not ${day}. Skipping execution.`);
-          return;
-        }
-        
-        logger.info(`Executing start schedule ${_id} for device ${deviceId}`);
-        logger.info(`Current time in ${timezone}: ${now.toLocaleString('en-US', { timeZone: timezone })}`);
-        
-        try {
-          // Get or create device state
-          let deviceState = await DeviceState.findOne({ deviceId });
-          if (!deviceState) {
-            deviceState = new DeviceState({
-              deviceId,
-              currentFanSpeed: 0,
-              powerOn: false,
-              isOnline: false
-            });
-          }
-          
-          // If this is the first schedule starting, save the original state
-          if (!deviceState.scheduleState || deviceState.scheduleState.activeScheduleCount === 0) {
-            // Initialize state stack if needed
-            if (!deviceState.stateStack) {
-              deviceState.stateStack = [];
-            }
-            
-            // Push current state to stack before schedule starts
-            deviceState.stateStack.push({
-              fanSpeed: deviceState.currentFanSpeed,
-              powerOn: deviceState.powerOn,
-              timestamp: new Date(),
-              operation: 'schedule',
-              operationId: _id.toString()
-            });
-            
-            logger.info(`First schedule starting - pushed current state to stack: Fan Speed: ${deviceState.currentFanSpeed}, Power: ${deviceState.powerOn}`);
-            deviceState.scheduleState = {
-              originalFanSpeed: deviceState.currentFanSpeed,
-              originalPowerOn: deviceState.powerOn,
-              activeScheduleCount: 1
-            };
+      let startCronExpressions = [];
+      let endCronExpressions = [];
+      
+      // Parse start and end times
+      const [startHour, startMinute] = startTime.split(':');
+      const [endHour, endMinute] = endTime.split(':');
+      
+      // Generate cron expressions based on recurrence type
+      switch (recurrenceType) {
+        case 'daily':
+          if (interval === 1) {
+            // Every day
+            startCronExpressions.push(`${startMinute} ${startHour} * * *`);
+            endCronExpressions.push(`${endMinute} ${endHour} * * *`);
           } else {
-            // Another schedule is already active, just increment the count
-            logger.info(`Additional schedule starting - active schedules: ${deviceState.scheduleState.activeScheduleCount + 1}`);
-            deviceState.scheduleState.activeScheduleCount += 1;
+            // Every N days - use custom logic with date checking
+            startCronExpressions.push(`${startMinute} ${startHour} */${interval} * *`);
+            endCronExpressions.push(`${endMinute} ${endHour} */${interval} * *`);
           }
-          await deviceState.save();
+          break;
           
-          // Send command to set fan speed (check for pre-clean override)
-          const result = await mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'schedule');
+        case 'weekly':
+          const dayMap = {
+            'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+            'Thursday': 4, 'Friday': 5, 'Saturday': 6
+          };
           
-          if (result && result.blocked) {
-            logger.info(`Schedule ${_id} blocked by pre-clean override`);
-            return;
+          if (day) {
+            // Single day weekly
+            const cronDay = dayMap[day];
+            if (interval === 1) {
+              startCronExpressions.push(`${startMinute} ${startHour} * * ${cronDay}`);
+              endCronExpressions.push(`${endMinute} ${endHour} * * ${cronDay}`);
+            } else {
+              // Every N weeks - need custom handling
+              startCronExpressions.push(`${startMinute} ${startHour} * * ${cronDay}`);
+              endCronExpressions.push(`${endMinute} ${endHour} * * ${cronDay}`);
+            }
+          } else if (days && days.length > 0) {
+            // Multiple days weekly
+            const cronDays = days.map(d => dayMap[d]).join(',');
+            startCronExpressions.push(`${startMinute} ${startHour} * * ${cronDays}`);
+            endCronExpressions.push(`${endMinute} ${endHour} * * ${cronDays}`);
           }
+          break;
           
-          // Update schedule execution history
-          await Schedule.findByIdAndUpdate(_id, {
-            lastExecuted: new Date(),
-            $push: {
-              executionHistory: {
-                executedAt: new Date(),
-                status: 'success',
-                message: `Fan speed set to ${fanSpeed}`,
-                retryCount: 0
-              }
+        case 'monthly':
+          // First occurrence of the day in each month
+          if (day) {
+            const cronDay = dayMap[day];
+            startCronExpressions.push(`${startMinute} ${startHour} 1-7 * ${cronDay}`);
+            endCronExpressions.push(`${endMinute} ${endHour} 1-7 * ${cronDay}`);
+          }
+          break;
+          
+        case 'custom':
+          if (customCron) {
+            // Use provided cron expression
+            const baseCron = customCron.split(' ');
+            if (baseCron.length >= 5) {
+              baseCron[0] = startMinute; // Override minute
+              baseCron[1] = startHour;   // Override hour
+              startCronExpressions.push(baseCron.join(' '));
+              
+              baseCron[0] = endMinute;
+              baseCron[1] = endHour;
+              endCronExpressions.push(baseCron.join(' '));
             }
-          });
-          
-          logger.info(`Schedule ${_id} executed successfully`);
-        } catch (error) {
-          logger.error(`Error executing schedule ${_id}:`, error);
-          
-          // Update schedule execution history with error
-          await Schedule.findByIdAndUpdate(_id, {
-            $push: {
-              executionHistory: {
-                executedAt: new Date(),
-                status: 'failed',
-                message: error.message,
-                retryCount: 0
-              }
-            }
-          });
-        }
-      }, {
-        scheduled: true,
-        timezone: process.env.TIMEZONE || 'UTC'
+          }
+          break;
+      }
+      
+      logger.info(`  Start cron: ${startCronExpressions}`);
+      logger.info(`  End cron: ${endCronExpressions}`);
+      
+      // Create start jobs
+      startCronExpressions.forEach((cronExpr, index) => {
+        const startJob = cron.schedule(cronExpr, async () => {
+          await this.executeScheduleStart(_id, deviceId, fanSpeed, recurrenceType, interval);
+        }, {
+          scheduled: true,
+          timezone: process.env.TIMEZONE || 'UTC'
+        });
+        
+        this.activeJobs.set(`${_id}_start_${index}`, startJob);
       });
       
-      // Create end cron job
-      const endJob = cron.schedule(endCronExpression, async () => {
-        console.log(`[END CRON] End job triggered for schedule ${_id} at ${new Date().toISOString()}`);
+      // Create end jobs
+      endCronExpressions.forEach((cronExpr, index) => {
+        const endJob = cron.schedule(cronExpr, async () => {
+          await this.executeScheduleEnd(_id, deviceId, recurrenceType, interval);
+        }, {
+          scheduled: true,
+          timezone: process.env.TIMEZONE || 'UTC'
+        });
         
-        // Double-check that today is the correct day (timezone-aware)
-        const now = new Date();
-        const timezone = process.env.TIMEZONE || 'UTC';
-        const currentDay = now.toLocaleString('en-US', { timeZone: timezone, weekday: 'long' });
-        
-        console.log(`[END CRON] Current day: ${currentDay}, Expected day: ${day}`);
-        
-        if (currentDay !== day) {
-          logger.warn(`End schedule ${_id} triggered but today is ${currentDay}, not ${day}. Skipping execution.`);
-          return;
-        }
-        
-        logger.info(`Executing end schedule ${_id} for device ${deviceId}`);
-        logger.info(`Current time in ${timezone}: ${now.toLocaleString('en-US', { timeZone: timezone })}`);
-        
-        try {
-          // Always turn off device when schedule ends (check for pre-clean override)
-          logger.info(`Schedule ${_id} ended - turning off device`);
-          const result = await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
-          
-          if (result && result.blocked) {
-            logger.info(`Schedule ${_id} end command blocked by pre-clean override`);
-            return;
-          }
-          
-          logger.info(`End schedule ${_id} executed successfully`);
-        } catch (error) {
-          logger.error(`Error executing end schedule ${_id}:`, error);
-        }
-      }, {
-        scheduled: true,
-        timezone: process.env.TIMEZONE || 'UTC'
+        this.activeJobs.set(`${_id}_end_${index}`, endJob);
       });
-      
-      // Store jobs in map
-      this.activeJobs.set(`${_id}_start`, startJob);
-      this.activeJobs.set(`${_id}_end`, endJob);
       
       logger.info(`Cron jobs created for schedule ${_id}`);
       
     } catch (error) {
       logger.error(`Error creating cron job for schedule ${schedule._id}:`, error);
       throw error;
+    }
+  }
+  
+  /**
+   * Execute schedule start with interval checking
+   */
+  async executeScheduleStart(scheduleId, deviceId, fanSpeed, recurrenceType, interval) {
+    if (interval > 1 && recurrenceType !== 'custom') {
+      const schedule = await Schedule.findById(scheduleId);
+      if (schedule && schedule.lastExecuted) {
+        const daysSinceLastExecution = Math.floor((new Date() - schedule.lastExecuted) / (1000 * 60 * 60 * 24));
+        
+        if (recurrenceType === 'daily' && daysSinceLastExecution < interval) {
+          return;
+        }
+        if (recurrenceType === 'weekly' && daysSinceLastExecution < (interval * 7)) {
+          return;
+        }
+      }
+    }
+    
+    try {
+      const result = await mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'schedule');
+      if (result && result.blocked) return;
+      
+      await Schedule.findByIdAndUpdate(scheduleId, {
+        lastExecuted: new Date(),
+        $push: {
+          executionHistory: {
+            executedAt: new Date(),
+            status: 'success',
+            message: `Fan speed set to ${fanSpeed}`,
+            retryCount: 0
+          }
+        }
+      });
+    } catch (error) {
+      logger.error(`Error executing schedule ${scheduleId}:`, error);
+    }
+  }
+  
+  async executeScheduleEnd(scheduleId, deviceId) {
+    try {
+      await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
+    } catch (error) {
+      logger.error(`Error executing end schedule ${scheduleId}:`, error);
     }
   }
   

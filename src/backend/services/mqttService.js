@@ -200,14 +200,21 @@ class MQTTService {
       
       // Update device state if command was successful
       if (data.status === 'success' && data.currentState) {
+        const updateData = {
+          currentFanSpeed: data.currentState.fanSpeed,
+          powerOn: data.currentState.powerOn,
+          isOnline: true,
+          lastSeen: new Date()
+        };
+        
+        // If device was turned off, mark as offline since it won't send more data
+        if (!data.currentState.powerOn) {
+          updateData.isOnline = false;
+        }
+        
         await DeviceState.findOneAndUpdate(
           { deviceId: data.deviceId },
-          {
-            currentFanSpeed: data.currentState.fanSpeed,
-            powerOn: data.currentState.powerOn,
-            isOnline: true,
-            lastSeen: new Date()
-          },
+          updateData,
           { upsert: true }
         );
       }
@@ -227,8 +234,9 @@ class MQTTService {
    * @returns {Promise<Object>} Command result
    */
   async sendCommand(deviceId, action, value, source = 'manual') {
-    // Pre-clean has higher priority - block schedule commands if pre-clean is active
-    if (source === 'schedule') {
+    // Pre-clean has higher priority - block schedule START commands if pre-clean is active
+    // But allow schedule END commands to go through
+    if (source === 'schedule' && action !== 'turnOff') {
       const PreClean = require('../models/PreClean');
       const activePreCleans = await PreClean.find({ 
         deviceId, 
@@ -236,12 +244,28 @@ class MQTTService {
       });
       
       if (activePreCleans.length > 0) {
-        logger.info(`🚫 BLOCKING schedule command for ${deviceId} - ${activePreCleans.length} pre-clean(s) active`);
+        logger.info(`🚫 BLOCKING schedule START command for ${deviceId} - ${activePreCleans.length} pre-clean(s) active`);
         console.log(`[BLOCK] Schedule command blocked: ${action} value ${value}`);
         return { blocked: true, reason: 'Pre-clean override active' };
       } else {
         console.log(`[ALLOW] No active pre-cleans, allowing schedule command: ${action} value ${value}`);
       }
+    } else if (source === 'schedule' && action === 'turnOff') {
+      // Always allow schedule END commands, but mark the schedule as ended
+      console.log(`[ALLOW] Schedule END command: ${action} value ${value}`);
+      
+      // Mark that this schedule has ended - update device state
+      const DeviceState = require('../models/DeviceState');
+      await DeviceState.findOneAndUpdate(
+        { deviceId },
+        { 
+          $set: { 
+            'scheduleState.scheduleEnded': true,
+            'scheduleState.scheduleEndedAt': new Date()
+          }
+        },
+        { upsert: true }
+      );
     } else {
       console.log(`[COMMAND] ${source} command: ${action} value ${value}`);
     }

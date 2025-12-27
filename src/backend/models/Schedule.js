@@ -14,11 +14,53 @@ const scheduleSchema = new mongoose.Schema({
     index: true
   },
   
-  // Day of the week (Monday, Tuesday, etc.)
-  day: {
+  // Recurrence configuration
+  recurrenceType: {
     type: String,
     required: true,
+    enum: ['daily', 'weekly', 'monthly', 'custom'],
+    default: 'weekly'
+  },
+  
+  // Day of the week (for weekly) or days array (for multiple days)
+  day: {
+    type: String,
+    enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+    // Required only for weekly single-day schedules
+    validate: {
+      validator: function(v) {
+        return this.recurrenceType !== 'weekly' || (this.recurrenceType === 'weekly' && (v || this.days));
+      },
+      message: 'Day is required for weekly recurrence'
+    }
+  },
+  
+  // Multiple days support (for weekly multi-day or custom patterns)
+  days: [{
+    type: String,
     enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  }],
+  
+  // Interval support (every N days/weeks/months)
+  interval: {
+    type: Number,
+    default: 1,
+    min: 1,
+    max: 365
+  },
+  
+  // Custom cron expression (for advanced patterns)
+  customCron: {
+    type: String,
+    validate: {
+      validator: function(v) {
+        if (this.recurrenceType === 'custom') {
+          return v && v.length > 0;
+        }
+        return true;
+      },
+      message: 'Custom cron expression is required for custom recurrence type'
+    }
   },
   
   // Start time (format: "HH:MM" like "09:00")

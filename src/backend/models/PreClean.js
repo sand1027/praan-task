@@ -18,11 +18,11 @@ const preCleanSchema = new mongoose.Schema({
     index: true
   },
   
-  targetFanSpeed: {
-    type: Number,
+  fanMode: {
+    type: String,
     required: true,
-    min: 1,
-    max: 5
+    enum: ['OFF', 'AUTO', 'MANUAL', 'PRE_CLEAN'],
+    index: true
   },
   
   duration: {

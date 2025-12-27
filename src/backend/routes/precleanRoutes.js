@@ -44,10 +44,11 @@ router.post('/', async (req, res) => {
     }
     
     // Validate fan mode
-    if (fanMode < 1 || fanMode > 5) {
+    const validModes = ['OFF', 'AUTO', 'MANUAL', 'PRE_CLEAN'];
+    if (!validModes.includes(fanMode)) {
       return res.status(400).json({
         success: false,
-        error: 'Fan mode must be between 1 and 5'
+        error: 'Fan mode must be one of: OFF, AUTO, MANUAL, PRE_CLEAN'
       });
     }
     
@@ -171,7 +172,7 @@ router.get('/status/:deviceId', async (req, res) => {
           willEndAt: preClean.scheduledEndAt,
           remainingSeconds,
           previousFanSpeed: preClean.previousState.fanSpeed,
-          targetFanSpeed: preClean.targetFanSpeed
+          targetFanMode: preClean.fanMode
         }
       });
     } else {

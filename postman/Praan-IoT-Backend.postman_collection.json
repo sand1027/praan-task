@@ -164,14 +164,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": 5,\n  \"seconds\": 30\n}"
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": \"PRE_CLEAN\",\n  \"seconds\": 30\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/preclean",
               "host": ["{{base_url}}"],
               "path": ["api", "preclean"]
             },
-            "description": "Start a temporary fan override. Supports 'minutes', 'seconds', or both. Device will run at specified fan mode for the duration, then restore to previous state. Examples: {minutes: 2}, {seconds: 30}, {minutes: 1, seconds: 30}"
+            "description": "Start a temporary fan override. Supports 'minutes', 'seconds', or both. Fan modes: OFF, AUTO, MANUAL, PRE_CLEAN. Examples: {fanMode: 'PRE_CLEAN'}, {fanMode: 'AUTO'}, {fanMode: 'OFF'}"
           }
         },
         {
@@ -186,14 +186,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": 5,\n  \"minutes\": 2\n}"
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": \"AUTO\",\n  \"minutes\": 2\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/preclean",
               "host": ["{{base_url}}"],
               "path": ["api", "preclean"]
             },
-            "description": "Pre-clean with minutes only (2 minutes = 120 seconds)"
+            "description": "Pre-clean with AUTO mode (sensor-based, medium speed) for 2 minutes"
           }
         },
         {
@@ -208,14 +208,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": 5,\n  \"minutes\": 1,\n  \"seconds\": 30\n}"
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": \"MANUAL\",\n  \"minutes\": 1,\n  \"seconds\": 30\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/preclean",
               "host": ["{{base_url}}"],
               "path": ["api", "preclean"]
             },
-            "description": "Pre-clean with both minutes and seconds (1 min 30 sec = 90 seconds total)"
+            "description": "Pre-clean with MANUAL mode (keeps current speed) for 1 min 30 sec"
           }
         },
         {

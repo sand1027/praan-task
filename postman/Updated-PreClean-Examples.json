@@ -1,0 +1,96 @@
+{
+  "info": {
+    "name": "Updated Pre-Clean Examples",
+    "description": "Examples using new fan mode system (OFF, AUTO, MANUAL, PRE_CLEAN)"
+  },
+  "item": [
+    {
+      "name": "Pre-Clean: OFF Mode",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceId\": \"AIR_PURIFIER_001\",\n  \"fanMode\": \"OFF\",\n  \"seconds\": 30\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/preclean",
+          "host": ["{{base_url}}"],
+          "path": ["api", "preclean"]
+        },
+        "description": "Turn device OFF for 30 seconds, then restore to previous state"
+      }
+    },
+    {
+      "name": "Pre-Clean: AUTO Mode",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceId\": \"AIR_PURIFIER_001\",\n  \"fanMode\": \"AUTO\",\n  \"minutes\": 2\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/preclean",
+          "host": ["{{base_url}}"],
+          "path": ["api", "preclean"]
+        },
+        "description": "Set device to AUTO mode (medium speed) for 2 minutes, then restore"
+      }
+    },
+    {
+      "name": "Pre-Clean: MANUAL Mode",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceId\": \"AIR_PURIFIER_001\",\n  \"fanMode\": \"MANUAL\",\n  \"minutes\": 1,\n  \"seconds\": 30\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/preclean",
+          "host": ["{{base_url}}"],
+          "path": ["api", "preclean"]
+        },
+        "description": "Set device to MANUAL mode (keeps current speed) for 1.5 minutes, then restore"
+      }
+    },
+    {
+      "name": "Pre-Clean: PRE_CLEAN Mode (Boost)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceId\": \"AIR_PURIFIER_001\",\n  \"fanMode\": \"PRE_CLEAN\",\n  \"minutes\": 5\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/preclean",
+          "host": ["{{base_url}}"],
+          "path": ["api", "preclean"]
+        },
+        "description": "Set device to PRE_CLEAN mode (maximum speed) for 5 minutes, then restore"
+      }
+    }
+  ]
+}

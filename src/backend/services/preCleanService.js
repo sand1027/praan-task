@@ -41,7 +41,7 @@ class PreCleanService {
       const preClean = new PreClean({
         preCleanId: crypto.randomUUID(),
         deviceId,
-        targetFanSpeed: fanMode,
+        fanMode,
         duration: durationSeconds,
         previousState: currentState,
         scheduledEndAt: new Date(Date.now() + durationSeconds * 1000)
@@ -50,17 +50,33 @@ class PreCleanService {
       await preClean.save();
       logger.info(`PreClean created: ${preClean.preCleanId} for device ${deviceId}`);
 
-      // Send command to device
-      mqttService.sendCommand(deviceId, 'setFanSpeed', fanMode, 'preclean')
-        .then(() => {
-          logger.info(`PreClean command sent successfully: ${preClean.preCleanId}`);
-        })
-        .catch((error) => {
-          logger.error(`PreClean command failed: ${error.message}`);
-        });
-
-      // Set precise timer for completion
-      setTimeout(async () => {
+      console.log(`[PRECLEAN] Starting ${fanMode} mode for ${durationSeconds} seconds`);
+      
+      // Send command to device based on fan mode
+      let fanSpeed;
+      switch (fanMode) {
+        case 'OFF':
+          mqttService.sendCommand(deviceId, 'turnOff', 0, 'preclean').catch(console.error);
+          break;
+        case 'AUTO':
+          fanSpeed = 3;
+          mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'preclean').catch(console.error);
+          break;
+        case 'MANUAL':
+          fanSpeed = currentState.fanSpeed || 2;
+          mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'preclean').catch(console.error);
+          break;
+        case 'PRE_CLEAN':
+          fanSpeed = 5;
+          mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'preclean').catch(console.error);
+          break;
+      }
+      
+      console.log(`[PRECLEAN] Command sent, now setting timer for ${durationSeconds} seconds`);
+      
+      // Set timer for completion
+      const self = this;
+      const timerId = setTimeout(async () => {
         try {
           console.log(`[TIMER] Pre-clean timer fired for ${preClean.preCleanId} after ${durationSeconds} seconds`);
           const activePreClean = await PreClean.findOne({ 
@@ -69,12 +85,16 @@ class PreCleanService {
           });
           if (activePreClean) {
             console.log(`[TIMER] Found active pre-clean ${preClean.preCleanId}, completing it`);
-            await this.completePreClean(activePreClean);
+            await self.completePreClean(activePreClean);
+          } else {
+            console.log(`[TIMER] Pre-clean ${preClean.preCleanId} not found or already completed`);
           }
         } catch (error) {
-          console.error(`[TIMER] Error completing pre-clean ${preClean.preCleanId}:`, error);
+          console.error(`[TIMER] Error completing pre-clean:`, error);
         }
       }, durationSeconds * 1000);
+      
+      console.log(`[PRECLEAN] Timer ${timerId} set successfully for ${durationSeconds} seconds`);
 
       return preClean;
     } catch (error) {
@@ -118,22 +138,14 @@ class PreCleanService {
       console.log(`[COMPLETE] Marked pre-clean ${preClean.preCleanId} as completed`);
       
       if (activePreCleans.length > 0) {
-        // Restore to the most recent active pre-clean's fan speed
-        const mostRecentPreClean = activePreCleans[0];
-        console.log(`[COMPLETE] Restoring to active pre-clean ${mostRecentPreClean.preCleanId} with fan speed ${mostRecentPreClean.targetFanSpeed}`);
-        
-        await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', mostRecentPreClean.targetFanSpeed, 'restore');
+        // Don't restore to another pre-clean, let it continue running
+        console.log(`[COMPLETE] ${activePreCleans.length} other pre-cleans still active, no restoration needed`);
       } else {
         // No more active pre-cleans - restore to original state
-        console.log(`[COMPLETE] No active pre-cleans remaining - finding original state`);
+        console.log(`[COMPLETE] No active pre-cleans remaining - restoring to original state`);
         
-        const firstPreClean = await PreClean.findOne({
-          deviceId: preClean.deviceId,
-          status: 'completed'
-        }).sort({ startedAt: 1 });
-        
-        if (firstPreClean && firstPreClean.previousState) {
-          const originalState = firstPreClean.previousState;
+        if (preClean.previousState) {
+          const originalState = preClean.previousState;
           console.log(`[COMPLETE] Restoring to original state: Fan Speed ${originalState.fanSpeed}, Power ${originalState.powerOn}`);
           
           if (originalState.powerOn) {

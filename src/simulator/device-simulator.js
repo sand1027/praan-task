@@ -111,6 +111,17 @@ function generateGradualValue(currentValue, min = 1, max = 100) {
   return Math.round(newValue * 100) / 100;
 }
 
+// Track auto-off timer
+let autoOffTimer = null;
+
+// Track offline message count to avoid spam
+let offlineMessageCount = 0;
+const MAX_OFFLINE_MESSAGES = 3;
+
+// Track failed publish attempts
+let failedPublishCount = 0;
+const MAX_FAILED_PUBLISHES = 3;
+
 /**
  * Update all sensor readings with gradual changes
  */
@@ -136,6 +147,9 @@ function publishSensorData() {
     return;
   }
   
+  // Reset offline message count when device is back online
+  console.log('[DEVICE] Device is back ONLINE - resuming data publishing');
+  
   // Update sensor readings with gradual changes
   updateSensorReadings();
   
@@ -155,7 +169,18 @@ function publishSensorData() {
   client.publish(topic, JSON.stringify(dataPacket), { qos: 1 }, (err) => {
     if (err) {
       console.error('[ERROR] Failed to publish sensor data:', err.message);
+      failedPublishCount++;
+      
+      if (failedPublishCount >= MAX_FAILED_PUBLISHES) {
+        console.log(`[DEVICE] ${MAX_FAILED_PUBLISHES} consecutive publish failures - turning device OFF`);
+        deviceState.powerOn = false;
+        deviceState.fanSpeed = 0;
+        failedPublishCount = 0; // Reset counter
+      }
     } else {
+      // Reset failed count on successful publish
+      failedPublishCount = 0;
+      
       console.log('[PUBLISHED] Sensor data sent to backend');
       console.log(`  Temperature: ${dataPacket.temperature}°C`);
       console.log(`  Humidity: ${dataPacket.humidity}%`);
@@ -217,6 +242,13 @@ function handleCommand(command) {
           throw new Error(`Invalid fan speed: ${value}. Must be between 0 and 5.`);
         }
         
+        // Clear auto-off timer if fan speed is being set
+        if (autoOffTimer) {
+          clearTimeout(autoOffTimer);
+          autoOffTimer = null;
+          console.log('[DEVICE] Auto-off timer cancelled - fan speed being set');
+        }
+        
         // Update device state
         deviceState.fanSpeed = value;
         deviceState.powerOn = value > 0; // If fan speed > 0, device is on
@@ -226,6 +258,13 @@ function handleCommand(command) {
         break;
       
       case 'turnOff':
+        // Clear auto-off timer if device is being turned off manually
+        if (autoOffTimer) {
+          clearTimeout(autoOffTimer);
+          autoOffTimer = null;
+          console.log('[DEVICE] Auto-off timer cancelled - device turned off manually');
+        }
+        
         // Turn off the device
         deviceState.powerOn = false;
         deviceState.fanSpeed = 0;
@@ -235,12 +274,58 @@ function handleCommand(command) {
         break;
       
       case 'turnOn':
-        // Turn on the device with default fan speed
-        deviceState.powerOn = true;
-        deviceState.fanSpeed = value || 2; // Default to speed 2 if not specified
+        // Clear any existing auto-off timer
+        if (autoOffTimer) {
+          clearTimeout(autoOffTimer);
+          autoOffTimer = null;
+          console.log('[DEVICE] Previous auto-off timer cancelled');
+        }
         
-        console.log(`[DEVICE] Device turned ON with fan speed ${deviceState.fanSpeed}`);
-        sendAcknowledgment(commandId, 'success', `Device turned on with fan speed ${deviceState.fanSpeed}`);
+        // Turn on the device without changing fan speed
+        deviceState.powerOn = true;
+        
+        console.log(`[DEVICE] Current fan speed: ${deviceState.fanSpeed}`);
+        
+        // Always set auto-off timer when turning on
+        console.log('[DEVICE] Setting 10-second auto-off timer');
+        
+        // Auto turn off after 5 seconds if fan speed remains 0
+        autoOffTimer = setTimeout(() => {
+          console.log(`[DEVICE] Timer fired - checking state: powerOn=${deviceState.powerOn}, fanSpeed=${deviceState.fanSpeed}`);
+          if (deviceState.powerOn && deviceState.fanSpeed === 0) {
+            console.log('[DEVICE] Auto turning OFF - device was on but fan speed remained 0 for 10 seconds');
+            deviceState.powerOn = false;
+            deviceState.fanSpeed = 0;
+            autoOffTimer = null;
+            
+            // Send auto-off notification to backend
+            const autoOffPacket = {
+              deviceId: CONFIG.deviceId,
+              timestamp: new Date().toISOString(),
+              networkStrength: deviceState.networkStrength,
+              fanSpeed: 0,
+              powerOn: false,
+              autoOff: true,
+              reason: 'Auto-off after 10 seconds with fan speed 0',
+              ...deviceState.sensors
+            };
+            
+            const topic = CONFIG.topics.data(CONFIG.deviceId);
+            client.publish(topic, JSON.stringify(autoOffPacket), { qos: 1 }, (err) => {
+              if (err) {
+                console.error('[ERROR] Failed to send auto-off notification:', err.message);
+              } else {
+                console.log('[DEVICE] Auto-off notification sent to backend');
+              }
+            });
+          } else {
+            console.log('[DEVICE] Auto-off cancelled - device state changed');
+            autoOffTimer = null;
+          }
+        }, 10000); // 10 seconds
+        
+        console.log(`[DEVICE] Device turned ON (fan speed remains ${deviceState.fanSpeed})`);
+        sendAcknowledgment(commandId, 'success', `Device turned on (fan speed: ${deviceState.fanSpeed})`);
         break;
       
       default:

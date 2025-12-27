@@ -47,15 +47,15 @@ router.post('/power', async (req, res) => {
     
     // Send command
     if (powerOn) {
-      // Turn on - restore to last saved fan speed, or default to 2 if never set
-      const fanSpeed = deviceState.lastFanSpeedBeforeOff && deviceState.lastFanSpeedBeforeOff > 0 
-        ? deviceState.lastFanSpeedBeforeOff 
-        : 2;
+      // Turn on - just power on without setting fan speed
+      // const fanSpeed = deviceState.lastFanSpeedBeforeOff && deviceState.lastFanSpeedBeforeOff > 0 
+      //   ? deviceState.lastFanSpeedBeforeOff 
+      //   : 2;
       
-      logger.info(`Turning device ON - restoring to fan speed: ${fanSpeed}`);
+      logger.info(`Turning device ON - fan speed will be 0`);
       
-      // Send command (non-blocking)
-      mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'control')
+      // Send turnOn command (device will power on with fan speed 0)
+      mqttService.sendCommand(deviceId, 'turnOn', 0, 'control')
         .then(() => {
           logger.info(`Turn ON command sent and acknowledged for device ${deviceId}`);
         })
@@ -69,8 +69,8 @@ router.post('/power', async (req, res) => {
         data: {
           deviceId,
           powerOn: true,
-          fanSpeed,
-          restoredFromLastState: deviceState.lastFanSpeedBeforeOff && deviceState.lastFanSpeedBeforeOff > 0
+          fanSpeed: 0,
+          restoredFromLastState: false
         }
       });
     } else {

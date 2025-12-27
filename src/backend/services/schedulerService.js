@@ -162,7 +162,7 @@ class SchedulerService {
   }
   
   /**
-   * Execute schedule start with interval checking
+   * Execute schedule start with multiple schedule coordination
    */
   async executeScheduleStart(scheduleId, deviceId, fanSpeed, recurrenceType, interval) {
     if (interval > 1 && recurrenceType !== 'custom') {
@@ -180,6 +180,38 @@ class SchedulerService {
     }
     
     try {
+      // Check for overlapping schedules
+      const currentTime = new Date();
+      const activeSchedules = await this.getActiveSchedulesAtTime(deviceId, currentTime);
+      
+      console.log(`[SCHEDULE] ${activeSchedules.length} schedules active at ${currentTime.toTimeString().slice(0,8)}`);
+      
+      if (activeSchedules.length > 1) {
+        // Multiple schedules - use priority logic (highest fan speed wins)
+        const highestSpeedSchedule = activeSchedules.reduce((max, current) => 
+          current.fanSpeed > max.fanSpeed ? current : max
+        );
+        
+        if (scheduleId.toString() !== highestSpeedSchedule._id.toString()) {
+          console.log(`[SCHEDULE] Schedule ${scheduleId} blocked by higher priority schedule (speed ${highestSpeedSchedule.fanSpeed})`);
+          
+          // Log execution but don't send command
+          await Schedule.findByIdAndUpdate(scheduleId, {
+            lastExecuted: new Date(),
+            $push: {
+              executionHistory: {
+                executedAt: new Date(),
+                status: 'blocked',
+                message: `Blocked by higher priority schedule (speed ${highestSpeedSchedule.fanSpeed})`,
+                retryCount: 0
+              }
+            }
+          });
+          return;
+        }
+      }
+      
+      // Send command (either single schedule or highest priority)
       const result = await mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'schedule');
       if (result && result.blocked) return;
       
@@ -201,10 +233,56 @@ class SchedulerService {
   
   async executeScheduleEnd(scheduleId, deviceId) {
     try {
-      await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
+      // Check if other schedules are still active
+      const currentTime = new Date();
+      const activeSchedules = await this.getActiveSchedulesAtTime(deviceId, currentTime);
+      
+      // Remove the ending schedule from active list
+      const remainingSchedules = activeSchedules.filter(s => s._id.toString() !== scheduleId.toString());
+      
+      console.log(`[SCHEDULE] Schedule ${scheduleId} ending. ${remainingSchedules.length} schedules still active`);
+      
+      if (remainingSchedules.length > 0) {
+        // Other schedules still active - switch to highest priority one
+        const highestSpeedSchedule = remainingSchedules.reduce((max, current) => 
+          current.fanSpeed > max.fanSpeed ? current : max
+        );
+        
+        console.log(`[SCHEDULE] Switching to schedule ${highestSpeedSchedule._id} (speed ${highestSpeedSchedule.fanSpeed})`);
+        await mqttService.sendCommand(deviceId, 'setFanSpeed', highestSpeedSchedule.fanSpeed, 'schedule');
+      } else {
+        // No more active schedules - turn off device
+        console.log(`[SCHEDULE] No more active schedules - turning off device`);
+        await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
+      }
     } catch (error) {
       logger.error(`Error executing end schedule ${scheduleId}:`, error);
     }
+  }
+  
+  /**
+   * Get active schedules at a specific time
+   */
+  async getActiveSchedulesAtTime(deviceId, currentTime) {
+    const currentDay = currentTime.toLocaleDateString('en-US', { weekday: 'long' });
+    const currentTimeStr = currentTime.toTimeString().slice(0, 5); // HH:MM format
+    
+    // Find all schedules for this device and day
+    const schedules = await Schedule.find({ 
+      deviceId, 
+      isActive: true,
+      $or: [
+        { day: currentDay },
+        { days: currentDay }
+      ]
+    });
+    
+    // Filter schedules that are currently active (within time window)
+    const activeSchedules = schedules.filter(schedule => {
+      return currentTimeStr >= schedule.startTime && currentTimeStr <= schedule.endTime;
+    });
+    
+    return activeSchedules;
   }
   
   /**

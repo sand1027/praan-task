@@ -141,8 +141,13 @@ class SchedulerService {
           }
           await deviceState.save();
           
-          // Send command to set fan speed
-          await mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'schedule');
+          // Send command to set fan speed (check for pre-clean override)
+          const result = await mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'schedule');
+          
+          if (result && result.blocked) {
+            logger.info(`Schedule ${_id} blocked by pre-clean override`);
+            return;
+          }
           
           // Update schedule execution history
           await Schedule.findByIdAndUpdate(_id, {
@@ -198,9 +203,14 @@ class SchedulerService {
         logger.info(`Current time in ${timezone}: ${now.toLocaleString('en-US', { timeZone: timezone })}`);
         
         try {
-          // Always turn off device when schedule ends (simplified logic)
+          // Always turn off device when schedule ends (check for pre-clean override)
           logger.info(`Schedule ${_id} ended - turning off device`);
-          await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
+          const result = await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
+          
+          if (result && result.blocked) {
+            logger.info(`Schedule ${_id} end command blocked by pre-clean override`);
+            return;
+          }
           
           logger.info(`End schedule ${_id} executed successfully`);
         } catch (error) {

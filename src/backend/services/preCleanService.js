@@ -21,19 +21,17 @@ class PreCleanService {
   /**
    * Start a new pre-clean operation
    */
-  async startPreClean(deviceId, fanMode, durationSeconds) {
+  async startPreClean(deviceId, fanMode, durationSeconds, fanSpeed = null) {
     try {
       const deviceState = await DeviceState.findOne({ deviceId });
       if (!deviceState) {
         throw new Error('Device not found');
       }
 
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const updatedDeviceState = await DeviceState.findOne({ deviceId });
+      // Get current state from device state (most reliable source)
       const currentState = {
-        fanSpeed: updatedDeviceState ? updatedDeviceState.currentFanSpeed : deviceState.currentFanSpeed,
-        powerOn: updatedDeviceState ? updatedDeviceState.powerOn : deviceState.powerOn
+        fanSpeed: deviceState.currentFanSpeed,
+        powerOn: deviceState.powerOn
       };
       
       logger.info(`PreClean saving current state: Fan Speed: ${currentState.fanSpeed}, Power: ${currentState.powerOn}`);
@@ -42,6 +40,7 @@ class PreCleanService {
         preCleanId: crypto.randomUUID(),
         deviceId,
         fanMode,
+        fanSpeed: fanSpeed, // Store the fanSpeed for MANUAL mode
         duration: durationSeconds,
         previousState: currentState,
         scheduledEndAt: new Date(Date.now() + durationSeconds * 1000)
@@ -53,22 +52,22 @@ class PreCleanService {
       console.log(`[PRECLEAN] Starting ${fanMode} mode for ${durationSeconds} seconds`);
       
       // Send command to device based on fan mode
-      let fanSpeed;
+      let targetFanSpeed;
       switch (fanMode) {
         case 'OFF':
           mqttService.sendCommand(deviceId, 'turnOff', 0, 'preclean').catch(console.error);
           break;
         case 'AUTO':
-          fanSpeed = 3;
-          mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'preclean').catch(console.error);
+          targetFanSpeed = 3;
+          mqttService.sendCommand(deviceId, 'setFanSpeed', targetFanSpeed, 'preclean').catch(console.error);
           break;
         case 'MANUAL':
-          fanSpeed = currentState.fanSpeed || 2;
-          mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'preclean').catch(console.error);
+          targetFanSpeed = fanSpeed || 2; // Use provided fanSpeed or default to 2
+          mqttService.sendCommand(deviceId, 'setFanSpeed', targetFanSpeed, 'preclean').catch(console.error);
           break;
         case 'PRE_CLEAN':
-          fanSpeed = 5;
-          mqttService.sendCommand(deviceId, 'setFanSpeed', fanSpeed, 'preclean').catch(console.error);
+          targetFanSpeed = 5;
+          mqttService.sendCommand(deviceId, 'setFanSpeed', targetFanSpeed, 'preclean').catch(console.error);
           break;
       }
       
@@ -138,21 +137,40 @@ class PreCleanService {
       console.log(`[COMPLETE] Marked pre-clean ${preClean.preCleanId} as completed`);
       
       if (activePreCleans.length > 0) {
-        // Don't restore to another pre-clean, let it continue running
-        console.log(`[COMPLETE] ${activePreCleans.length} other pre-cleans still active, no restoration needed`);
-      } else {
-        // No more active pre-cleans - restore to original state
-        console.log(`[COMPLETE] No active pre-cleans remaining - restoring to original state`);
+        // Restore to the most recent active pre-clean's target speed
+        const mostRecentPreClean = activePreCleans[0]; // Already sorted by startedAt desc
+        console.log(`[COMPLETE] ${activePreCleans.length} other pre-cleans still active - restoring to most recent pre-clean`);
         
-        if (preClean.previousState) {
-          const originalState = preClean.previousState;
-          console.log(`[COMPLETE] Restoring to original state: Fan Speed ${originalState.fanSpeed}, Power ${originalState.powerOn}`);
-          
-          if (originalState.powerOn) {
-            await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', originalState.fanSpeed, 'restore');
-          } else {
+        let targetSpeed;
+        switch (mostRecentPreClean.fanMode) {
+          case 'OFF':
             await mqttService.sendCommand(preClean.deviceId, 'turnOff', 0, 'restore');
-          }
+            console.log(`[COMPLETE] Restored to most recent pre-clean: OFF`);
+            return;
+          case 'AUTO':
+            targetSpeed = 3;
+            break;
+          case 'MANUAL':
+            targetSpeed = mostRecentPreClean.fanSpeed || 2;
+            break;
+          case 'PRE_CLEAN':
+            targetSpeed = 5;
+            break;
+        }
+        
+        await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', targetSpeed, 'restore');
+        console.log(`[COMPLETE] Restored to most recent pre-clean: ${mostRecentPreClean.fanMode} speed ${targetSpeed}`);
+      } else {
+        // No more active pre-cleans - restore to the state this pre-clean saved
+        console.log(`[COMPLETE] No active pre-cleans remaining - restoring to saved state`);
+        
+        const originalState = preClean.previousState;
+        console.log(`[COMPLETE] Restoring to saved state: Fan Speed ${originalState.fanSpeed}, Power ${originalState.powerOn}`);
+        
+        if (originalState.powerOn) {
+          await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', originalState.fanSpeed, 'restore');
+        } else {
+          await mqttService.sendCommand(preClean.deviceId, 'turnOff', 0, 'restore');
         }
       }
       

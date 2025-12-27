@@ -32,7 +32,7 @@ const preCleanService = require('../services/preCleanService');
  */
 router.post('/', async (req, res) => {
   try {
-    const { deviceId, fanMode, minutes, seconds } = req.body;
+    const { deviceId, fanMode, fanSpeed, minutes, seconds } = req.body;
     
     // Validate required fields
     if (!deviceId || !fanMode || (minutes === undefined && seconds === undefined)) {
@@ -52,6 +52,16 @@ router.post('/', async (req, res) => {
       });
     }
     
+    // Validate fanSpeed for MANUAL mode
+    if (fanMode === 'MANUAL') {
+      if (!fanSpeed || fanSpeed < 1 || fanSpeed > 5) {
+        return res.status(400).json({
+          success: false,
+          error: 'fanSpeed (1-5) is required for MANUAL mode'
+        });
+      }
+    }
+    
     // Calculate total duration in seconds
     const totalSeconds = (minutes || 0) * 60 + (seconds || 0);
     
@@ -63,11 +73,11 @@ router.post('/', async (req, res) => {
       });
     }
     
-    logger.info('Pre-clean requested:', { deviceId, fanMode, minutes, seconds, totalSeconds });
+    logger.info('Pre-clean requested:', { deviceId, fanMode, fanSpeed, minutes, seconds, totalSeconds });
     
     // Start pre-clean using service
     try {
-      const preClean = await preCleanService.startPreClean(deviceId, fanMode, totalSeconds);
+      const preClean = await preCleanService.startPreClean(deviceId, fanMode, totalSeconds, fanSpeed);
       
       res.status(200).json({
         success: true,
@@ -75,6 +85,7 @@ router.post('/', async (req, res) => {
         data: {
           deviceId,
           fanMode,
+          fanSpeed: fanSpeed || null,
           minutes: minutes || 0,
           seconds: seconds || 0,
           totalSeconds,

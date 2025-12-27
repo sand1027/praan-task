@@ -208,14 +208,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": \"MANUAL\",\n  \"minutes\": 1,\n  \"seconds\": 30\n}"
+              "raw": "{\n  \"deviceId\": \"{{device_id}}\",\n  \"fanMode\": \"MANUAL\",\n  \"fanSpeed\": 4,\n  \"minutes\": 1,\n  \"seconds\": 30\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/preclean",
               "host": ["{{base_url}}"],
               "path": ["api", "preclean"]
             },
-            "description": "Pre-clean with MANUAL mode (keeps current speed) for 1 min 30 sec"
+            "description": "Pre-clean with MANUAL mode and specific fan speed (1-5) for 1 min 30 sec. For MANUAL mode, fanSpeed is required."
           }
         },
         {

@@ -25,6 +25,23 @@ const preCleanSchema = new mongoose.Schema({
     index: true
   },
   
+  fanSpeed: {
+    type: Number,
+    min: 1,
+    max: 5,
+    // Required only for MANUAL mode
+    validate: {
+      validator: function(value) {
+        // fanSpeed is required for MANUAL mode, optional for others
+        if (this.fanMode === 'MANUAL') {
+          return value >= 1 && value <= 5;
+        }
+        return true; // Optional for other modes
+      },
+      message: 'fanSpeed (1-5) is required for MANUAL mode'
+    }
+  },
+  
   duration: {
     type: Number,
     required: true,

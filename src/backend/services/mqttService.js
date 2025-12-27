@@ -227,6 +227,25 @@ class MQTTService {
    * @returns {Promise<Object>} Command result
    */
   async sendCommand(deviceId, action, value, source = 'manual') {
+    // Pre-clean has higher priority - block schedule commands if pre-clean is active
+    if (source === 'schedule') {
+      const PreClean = require('../models/PreClean');
+      const activePreCleans = await PreClean.find({ 
+        deviceId, 
+        status: 'active' 
+      });
+      
+      if (activePreCleans.length > 0) {
+        logger.info(`🚫 BLOCKING schedule command for ${deviceId} - ${activePreCleans.length} pre-clean(s) active`);
+        console.log(`[BLOCK] Schedule command blocked: ${action} value ${value}`);
+        return { blocked: true, reason: 'Pre-clean override active' };
+      } else {
+        console.log(`[ALLOW] No active pre-cleans, allowing schedule command: ${action} value ${value}`);
+      }
+    } else {
+      console.log(`[COMMAND] ${source} command: ${action} value ${value}`);
+    }
+    
     const commandId = uuidv4();
     
     const command = {

@@ -7,6 +7,17 @@
 
 const winston = require('winston');
 const path = require('path');
+const fs = require('fs');
+
+// Ensure logs directory exists
+const logsDir = path.join(__dirname, '../../logs');
+try {
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+  }
+} catch (error) {
+  console.error('Failed to create logs directory:', error.message);
+}
 
 // Define log format
 const logFormat = winston.format.combine(
@@ -20,34 +31,49 @@ const logFormat = winston.format.combine(
   })
 );
 
+// Create transports array with error handling
+const transports = [
+  new winston.transports.Console({
+    format: winston.format.combine(
+      winston.format.colorize(),
+      logFormat
+    ),
+    handleExceptions: true
+  })
+];
+
+// Add file transports with error handling
+try {
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(logsDir, 'combined.log'),
+      maxsize: 5242880,
+      maxFiles: 5,
+      handleExceptions: true
+    }),
+    new winston.transports.File({
+      filename: path.join(logsDir, 'error.log'),
+      level: 'error',
+      maxsize: 5242880,
+      maxFiles: 5,
+      handleExceptions: true
+    })
+  );
+} catch (error) {
+  console.error('Failed to initialize file transports:', error.message);
+}
+
 // Create logger instance
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   format: logFormat,
-  transports: [
-    // Write all logs to console
-    new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        logFormat
-      )
-    }),
-    
-    // Write all logs to combined.log file
-    new winston.transports.File({
-      filename: path.join(__dirname, '../../logs/combined.log'),
-      maxsize: 5242880, // 5MB
-      maxFiles: 5
-    }),
-    
-    // Write error logs to error.log file
-    new winston.transports.File({
-      filename: path.join(__dirname, '../../logs/error.log'),
-      level: 'error',
-      maxsize: 5242880, // 5MB
-      maxFiles: 5
-    })
-  ]
+  transports,
+  exitOnError: false
+});
+
+// Handle logger errors
+logger.on('error', (error) => {
+  console.error('Logger error:', error.message);
 });
 
 module.exports = logger;

@@ -242,6 +242,49 @@ class SchedulerService {
       
       console.log(`[SCHEDULE] Schedule ${scheduleId} ending. ${remainingSchedules.length} schedules still active`);
       
+      // Check if pre-clean is active
+      const PreClean = require('../models/PreClean');
+      const activePreCleans = await PreClean.find({ 
+        deviceId, 
+        status: 'active' 
+      });
+      
+      console.log(`[SCHEDULE] Found ${activePreCleans.length} active pre-cleans for device ${deviceId}`);
+      
+      if (activePreCleans.length > 0) {
+        // Pre-clean is active - immediately cancel it and turn off device
+        console.log(`[SCHEDULE] Pre-clean active - cancelling pre-clean and turning off device immediately`);
+        
+        // Cancel all active pre-cleans
+        const preCleanService = require('./preCleanService');
+        for (const preClean of activePreCleans) {
+          await preCleanService.cancelPreCleanImmediately(preClean.preCleanId);
+        }
+        
+        // Turn off device immediately
+        await mqttService.sendCommand(deviceId, 'turnOff', 0, 'schedule');
+        
+        console.log(`[SCHEDULE] Device turned off immediately due to schedule end`);
+        return;
+        
+        // COMMENTED: Wait for pre-clean to complete behavior
+        // console.log(`[SCHEDULE] Pre-clean active - marking schedule as ended without sending command`);
+        // 
+        // const DeviceState = require('../models/DeviceState');
+        // await DeviceState.findOneAndUpdate(
+        //   { deviceId },
+        //   { 
+        //     $set: { 
+        //       'scheduleState.scheduleEnded': true,
+        //       'scheduleState.scheduleEndedAt': new Date()
+        //     }
+        //   },
+        //   { upsert: true }
+        // );
+        // console.log(`[SCHEDULE] Device state updated with scheduleEnded flag`);
+        // return;
+      }
+      
       if (remainingSchedules.length > 0) {
         // Other schedules still active - switch to highest priority one
         const highestSpeedSchedule = remainingSchedules.reduce((max, current) => 
@@ -279,7 +322,7 @@ class SchedulerService {
     
     // Filter schedules that are currently active (within time window)
     const activeSchedules = schedules.filter(schedule => {
-      return currentTimeStr >= schedule.startTime && currentTimeStr <= schedule.endTime;
+      return currentTimeStr >= schedule.startTime && currentTimeStr < schedule.endTime;
     });
     
     return activeSchedules;

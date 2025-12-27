@@ -77,6 +77,13 @@ const deviceStateSchema = new mongoose.Schema({
     activeScheduleCount: {
       type: Number,
       default: 0
+    },
+    scheduleEnded: {
+      type: Boolean,
+      default: false
+    },
+    scheduleEndedAt: {
+      type: Date
     }
   },
   

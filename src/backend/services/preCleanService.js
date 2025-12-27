@@ -164,27 +164,24 @@ class PreCleanService {
         // No more active pre-cleans - check if schedule ended while pre-clean was active
         console.log(`[COMPLETE] No active pre-cleans remaining - checking schedule status`);
         
-        const deviceState = await DeviceState.findOne({ deviceId: preClean.deviceId });
+        // Check if any schedules are currently active
+        const schedulerService = require('./schedulerService');
+        const currentTime = new Date();
+        const activeSchedules = await schedulerService.getActiveSchedulesAtTime(preClean.deviceId, currentTime);
         
-        if (deviceState?.scheduleState?.scheduleEnded) {
-          // Schedule ended while pre-clean was active - turn off device
-          console.log(`[COMPLETE] Schedule ended during pre-clean - turning off device`);
-          await mqttService.sendCommand(preClean.deviceId, 'turnOff', 0, 'restore');
-          
-          // Clear the schedule ended flag
-          await DeviceState.findOneAndUpdate(
-            { deviceId: preClean.deviceId },
-            { 
-              $unset: { 
-                'scheduleState.scheduleEnded': 1,
-                'scheduleState.scheduleEndedAt': 1
-              }
-            }
+        console.log(`[COMPLETE] Found ${activeSchedules.length} active schedules at current time`);
+        
+        if (activeSchedules.length > 0) {
+          // There are active schedules - restore to highest priority schedule
+          const highestSpeedSchedule = activeSchedules.reduce((max, current) => 
+            current.fanSpeed > max.fanSpeed ? current : max
           );
+          console.log(`[COMPLETE] Active schedule found - restoring to schedule speed ${highestSpeedSchedule.fanSpeed}`);
+          await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', highestSpeedSchedule.fanSpeed, 'restore');
         } else {
-          // Restore to the state this pre-clean saved
+          // No active schedules - restore to the state this pre-clean saved
           const originalState = preClean.previousState;
-          console.log(`[COMPLETE] Restoring to saved state: Fan Speed ${originalState.fanSpeed}, Power ${originalState.powerOn}`);
+          console.log(`[COMPLETE] No active schedules - restoring to saved state: Fan Speed ${originalState.fanSpeed}, Power ${originalState.powerOn}`);
           
           if (originalState.powerOn) {
             await mqttService.sendCommand(preClean.deviceId, 'setFanSpeed', originalState.fanSpeed, 'restore');
@@ -215,6 +212,32 @@ class PreCleanService {
     return await PreClean.find({ deviceId })
       .sort({ startedAt: -1 })
       .limit(limit);
+  }
+
+  /**
+   * Cancel a specific pre-clean immediately (called by schedule end)
+   */
+  async cancelPreCleanImmediately(preCleanId) {
+    try {
+      const preClean = await PreClean.findOne({ preCleanId, status: 'active' });
+      
+      if (!preClean) {
+        console.log(`[CANCEL] Pre-clean ${preCleanId} not found or already completed`);
+        return;
+      }
+      
+      console.log(`[CANCEL] Immediately cancelling pre-clean ${preCleanId}`);
+      
+      // Mark as cancelled
+      preClean.status = 'cancelled';
+      preClean.actualEndAt = new Date();
+      await preClean.save();
+      
+      console.log(`[CANCEL] Pre-clean ${preCleanId} cancelled successfully`);
+      
+    } catch (error) {
+      logger.error(`Error cancelling pre-clean ${preCleanId}:`, error);
+    }
   }
 
   /**

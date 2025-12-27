@@ -146,21 +146,29 @@ class MQTTService {
       logger.info(`Sensor data saved to database for device: ${data.deviceId}`);
       
       // Update device state
+      const updateData = {
+        currentFanSpeed: data.fanSpeed,
+        powerOn: data.powerOn,
+        isOnline: data.powerOn, // Device is online only if powered on
+        lastSeen: new Date(),
+        latestSensorData: {
+          temperature: data.temperature,
+          humidity: data.humidity,
+          pm25: data.pm25,
+          networkStrength: data.networkStrength,
+          timestamp: new Date(data.timestamp)
+        }
+      };
+      
+      // Special handling for auto-off notifications
+      if (data.autoOff) {
+        updateData.isOnline = false;
+        logger.info(`Device ${data.deviceId} auto-turned off - marking as offline`);
+      }
+      
       await DeviceState.findOneAndUpdate(
         { deviceId: data.deviceId },
-        {
-          currentFanSpeed: data.fanSpeed,
-          powerOn: data.powerOn,
-          isOnline: true,
-          lastSeen: new Date(),
-          latestSensorData: {
-            temperature: data.temperature,
-            humidity: data.humidity,
-            pm25: data.pm25,
-            networkStrength: data.networkStrength,
-            timestamp: new Date(data.timestamp)
-          }
-        },
+        updateData,
         { upsert: true, new: true }
       );
       

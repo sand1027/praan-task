@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node src/backend/server.js",
     "dev": "nodemon src/backend/server.js",
-    "simulator": "node src/simulator/device-simulator.js",
+    "simulator": "node src/simulator/device-simulator.js AIR_PURIFIER_001",
+    "simulator:living": "node src/simulator/device-simulator.js LIVING_ROOM_001",
+    "simulator:bedroom": "node src/simulator/device-simulator.js BEDROOM_002",
+    "simulator:kitchen": "node src/simulator/device-simulator.js KITCHEN_003",
+    "setup-devices": "node scripts/setup-devices.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

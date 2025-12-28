@@ -18,8 +18,8 @@ const CONFIG = {
   // MQTT Broker connection details
   brokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://test.mosquitto.org:1883',
   
-  // Unique device identifier (like a serial number)
-  deviceId: process.env.DEVICE_ID || 'AIR_PURIFIER_001',
+  // Device will be configured via command line argument or default
+  deviceId: process.argv[2] || 'AIR_PURIFIER_001',
   
   // How often to send sensor data (2 minutes = 120000 milliseconds)
   dataPublishInterval: 2 * 60 * 1000, // 2 minutes

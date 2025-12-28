@@ -126,6 +126,9 @@ class MQTTService {
     try {
       logger.info(`Received sensor data from device: ${data.deviceId}`);
       
+      // Auto-register device if it doesn't exist
+      await this.ensureDeviceExists(data.deviceId);
+      
       // Save sensor data to MongoDB
       const sensorReading = new SensorData({
         deviceId: data.deviceId,
@@ -174,6 +177,40 @@ class MQTTService {
       
     } catch (error) {
       logger.error('Error handling sensor data:', error);
+    }
+  }
+  
+  /**
+   * Ensure device exists in database (auto-register if needed)
+   */
+  async ensureDeviceExists(deviceId) {
+    try {
+      const Device = require('../models/Device');
+      
+      const existingDevice = await Device.findOne({ deviceId });
+      if (!existingDevice) {
+        // Auto-register device with default values
+        const device = new Device({
+          deviceId,
+          name: `Auto-registered ${deviceId}`,
+          type: 'AIR_PURIFIER',
+          location: {
+            room: 'Unknown',
+            building: 'Unknown'
+          },
+          specifications: {
+            model: 'Unknown',
+            manufacturer: 'Unknown',
+            maxFanSpeed: 5
+          },
+          status: 'active'
+        });
+        
+        await device.save();
+        logger.info(`Auto-registered device: ${deviceId}`);
+      }
+    } catch (error) {
+      logger.error(`Error ensuring device exists: ${deviceId}`, error);
     }
   }
   

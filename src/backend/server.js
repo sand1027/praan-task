@@ -14,12 +14,15 @@ const logger = require('./utils/logger');
 const mqttService = require('./services/mqttService');
 const schedulerService = require('./services/schedulerService');
 const preCleanService = require('./services/preCleanService');
+const { deviceAliasMiddleware } = require('./middleware/deviceAlias');
 
 // Import routes
 const scheduleRoutes = require('./routes/scheduleRoutes');
 const precleanRoutes = require('./routes/precleanRoutes');
 const deviceRoutes = require('./routes/deviceRoutes');
 const controlRoutes = require('./routes/controlRoutes');
+const deviceManagementRoutes = require('./routes/deviceManagementRoutes');
+const aliasRoutes = require('./routes/aliasRoutes');
 
 // ============================================
 // CONFIGURATION
@@ -38,6 +41,7 @@ const app = express();
 app.use(cors()); // Allow cross-origin requests
 app.use(express.json()); // Parse JSON request bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(deviceAliasMiddleware); // Device alias middleware
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -91,6 +95,18 @@ app.get('/', (req, res) => {
         commands: 'GET /api/device/:deviceId/commands',
         statistics: 'GET /api/device/:deviceId/statistics',
         list: 'GET /api/device/list/all'
+      },
+      deviceManagement: {
+        register: 'POST /api/devices/register',
+        list: 'GET /api/devices',
+        get: 'GET /api/devices/:deviceId',
+        update: 'PUT /api/devices/:deviceId',
+        delete: 'DELETE /api/devices/:deviceId',
+        active: 'GET /api/devices/status/active'
+      },
+      alias: {
+        current: 'GET /api/alias/current',
+        set: 'POST /api/alias/set/:deviceId'
       }
     },
     documentation: 'See README.md for detailed API documentation'
@@ -102,6 +118,8 @@ app.use('/api/schedule', scheduleRoutes);
 app.use('/api/preclean', precleanRoutes);
 app.use('/api/device', deviceRoutes);
 app.use('/api/control', controlRoutes);
+app.use('/api/devices', deviceManagementRoutes);
+app.use('/api/alias', aliasRoutes);
 
 // 404 handler
 app.use((req, res) => {

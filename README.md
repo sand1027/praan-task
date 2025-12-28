@@ -5,19 +5,14 @@ A production-grade IoT backend system for managing air purifier devices with rea
 ## Table of Contents
 
 - [Overview](#overview)
-- [Features](#features)
 - [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Running the System](#running-the-system)
+- [MQTT Communication](#mqtt-communication)
+- [Database Models](#database-models)
 - [API Documentation](#api-documentation)
-- [MQTT Topics and Message Formats](#mqtt-topics-and-message-formats)
-- [Database Schemas](#database-schemas)
-- [AWS Deployment](#aws-deployment)
-- [Testing](#testing)
-- [Troubleshooting](#troubleshooting)
+- [Installation & Setup](#installation--setup)
+- [Test Cases](#test-cases)
+- [System Flows](#system-flows)
 - [Trade-offs and Design Decisions](#trade-offs-and-design-decisions)
-- [Assumptions](#assumptions)
 
 ---
 
@@ -29,212 +24,569 @@ This system consists of three main components:
 2. **Backend Server** - Node.js server that manages devices, stores data, and provides REST APIs
 3. **MQTT Broker** - Message broker (Mosquitto) that facilitates communication between devices and backend
 
-### What This System Does (Simple Explanation)
+### What This System Does
 
-Think of this like a smart home system for air purifiers:
-
-- **The Air Purifier (Simulator)**: A fake air purifier that sends information about air quality every 2 minutes
-- **The Backend Server**: The brain that receives data, stores it, and can control the air purifier
-- **MQTT Broker**: Like a post office that delivers messages between the air purifier and the server
-- **APIs**: Remote controls that let you schedule when the purifier runs or boost it temporarily
-
----
-
-## Features
-
-### Device Simulator
-- Publishes sensor data every 2 minutes (temperature, humidity, PM2.5, etc.)
-- Gradual sensor value changes (realistic simulation)
-- Responds to commands (set fan speed, turn off)
-- Sends acknowledgments for received commands
-
-### Backend Server
-- Real-time MQTT data ingestion
-- Stores all sensor data in MongoDB
-- RESTful APIs for device management
-- Recurring schedule management with cron jobs
-- Temporary fan override (pre-clean) functionality
-- Automatic state restoration after pre-clean
-- Command retry logic (up to 3 attempts)
-- Comprehensive logging
-- Health check endpoints
-
-### APIs
-1. **Schedule API** - Create recurring schedules (e.g., "Every Monday 9am-5pm, run at speed 3")
-2. **Pre-Clean API** - Temporary fan boost (e.g., "Run at max speed for 10 minutes")
-3. **Device API** - Get sensor data, device state, statistics, and command history
+- **Device Simulator**: JavaScript program that simulates an air purifier, sends sensor data, receives commands from backend, and responds to commands
+- **Backend Server**: Receives data, stores it, and controls the air purifier through REST APIs
+- **MQTT Broker**: Message queue telemetry transport following publisher-subscriber model for communication
+- **APIs**: Remote controls for scheduling, pre-clean operations, and device management
 
 ---
 
 ## Architecture
 
-### System Architecture Diagram
+![System Architecture](images/architecture.png)
 
-```mermaid
-graph TB
-    subgraph "IoT Device Layer"
-        Device[Air Purifier Simulator<br/>JavaScript]
-        Sensors[Sensor Data:<br/>Temp, Humidity, PM2.5, etc.]
-    end
-    
-    subgraph "Message Broker Layer"
-        Broker[MQTT Broker<br/>Mosquitto]
-        DataTopic[device/deviceId/data]
-        CmdTopic[device/deviceId/command]
-        AckTopic[device/deviceId/ack]
-    end
-    
-    subgraph "Backend Layer"
-        API[REST API<br/>Express.js]
-        MQTTClient[MQTT Client Service]
-        Scheduler[Scheduler Service<br/>node-cron]
-        Logger[Logger<br/>Winston]
-    end
-    
-    subgraph "Data Layer"
-        MongoDB[(MongoDB Database)]
-        SensorData[Sensor Data Collection]
-        Schedules[Schedules Collection]
-        DeviceState[Device State Collection]
-        CommandLog[Command Log Collection]
-    end
-    
-    subgraph "Client Layer"
-        Postman[API Client<br/>Postman/Frontend]
-    end
-    
-    Device -->|Publish Data| DataTopic
-    DataTopic -->|Subscribe| MQTTClient
-    MQTTClient -->|Store| MongoDB
-    
-    API -->|Send Command| MQTTClient
-    MQTTClient -->|Publish| CmdTopic
-    CmdTopic -->|Subscribe| Device
-    
-    Device -->|Publish Ack| AckTopic
-    AckTopic -->|Subscribe| MQTTClient
-    
-    Scheduler -->|Trigger Command| MQTTClient
-    
-    Postman -->|HTTP Request| API
-    
-    MongoDB --> SensorData
-    MongoDB --> Schedules
-    MongoDB --> DeviceState
-    MongoDB --> CommandLog
-    
-    Sensors -.->|Read| Device
-    Logger -.->|Log Events| API
-    Logger -.->|Log Events| MQTTClient
-    Logger -.->|Log Events| Scheduler
+### 5-Layer Architecture Overview
 
-    style Device fill:#e1f5ff
-    style Broker fill:#fff4e1
-    style API fill:#e8f5e9
-    style MongoDB fill:#f3e5f5
+The system follows a layered architecture pattern with clear separation of concerns:
+
+#### Layer 1: Device Layer
+**Components:**
+- Device Simulator (Air Purifier)
+- Sensor Readings (Temp, Humidity, PM2.5, etc.)
+
+**Purpose:** Simulates an IoT air purifier. Generates sensor readings and publishes them to MQTT.
+
+**Responsibilities:**
+- Generate sensor data every 2 minutes (when powered on)
+- Subscribe to command topics to receive commands
+- Execute commands (set fan speed, turn on/off)
+- Publish acknowledgments after executing commands
+- Maintain internal device state (fan speed, power status)
+
+**Communication:**
+- Publishes to: `device/deviceId/data` (sensor data)
+- Publishes to: `device/deviceId/ack` (acknowledgments)
+- Subscribes to: `device/deviceId/command` (commands)
+
+#### Layer 2: MQTT Broker Layer
+**Components:**
+- MQTT Broker (Mosquitto)
+- Data Topic: `device/deviceId/data`
+- Command Topic: `device/deviceId/command`
+- Acknowledgment Topic: `device/deviceId/ack`
+
+**Purpose:** Message broker that routes messages between devices and backend using pub/sub.
+
+**Responsibilities:**
+- Receive messages from publishers (devices, backend)
+- Route messages to subscribers based on topics
+- Ensure message delivery (QoS 1 - at least once)
+- Handle connections from multiple devices
+
+**Communication Pattern:**
+- Pub/Sub: Publishers don't know subscribers, subscribers don't know publishers
+- Wildcard subscriptions: Backend subscribes to `device/+/data` (all devices)
+
+#### Layer 3: Backend Services
+**Components:**
+- REST API (Express.js)
+- MQTT Service (Message Handler)
+- Scheduler Service (Cron Jobs)
+- PreClean Service (Timers)
+
+**REST API (Express.js)**
+- Purpose: Provides HTTP endpoints for clients
+- Responsibilities: Handle HTTP requests, validate data, call services, return JSON responses
+- Endpoints: Device control, schedule management, pre-clean operations, device data
+
+**MQTT Service (Message Handler)**
+- Purpose: Handles all MQTT communication between backend and devices
+- Responsibilities: Connect to MQTT broker, subscribe to topics, publish commands, implement retry logic
+- Key Functions: `handleSensorData()`, `handleAcknowledgment()`, `sendCommand()`
+
+**Scheduler Service (Cron Jobs)**
+- Purpose: Manages recurring schedules using cron jobs
+- Responsibilities: Load schedules, create cron jobs, execute schedule start/end, handle overlapping schedules
+- Uses: node-cron library, stores active jobs in memory Map
+
+**PreClean Service (Timers)**
+- Purpose: Manages temporary fan override operations
+- Responsibilities: Start pre-clean, manage timers, complete/cancel pre-clean, implement stack behavior
+- Key Functions: `startPreClean()`, `completePreClean()`, `cancelPreCleanImmediately()`
+
+#### Layer 4: Data Layer - MongoDB
+**Components:**
+- SensorData Collection (time-series data)
+- DeviceState Collection (current device state)
+- Schedules Collection (recurring schedule definitions)
+- PreClean Collection (pre-clean operations)
+- CommandLog Collection (audit trail)
+
+**Purpose:** Persistent storage for all system data with optimized indexes for performance.
+
+#### Layer 5: Client Layer
+**Components:**
+- API Client (Postman/Frontend/Mobile App)
+
+**Purpose:** External clients that interact with the system via REST API.
+
+**Types:** Postman (testing), Web Frontend (UI), Mobile App (control), Third-party integrations
+
+### Data Flow Between Layers
+
+#### Sensor Data Flow
+```
+Device Layer → MQTT Broker Layer → Backend Services (MQTT Service) → Data Layer (SensorData, DeviceState)
 ```
 
-### Component Breakdown
+#### Command Flow
+```
+Client Layer → Backend Services (REST API) → Backend Services (MQTT Service) → MQTT Broker Layer → Device Layer
+```
 
-#### 1. Device Simulator (`src/simulator/device-simulator.js`)
-- **Purpose**: Simulates a real air purifier device
-- **Responsibilities**:
-  - Generate realistic sensor data with gradual changes
-  - Publish data to MQTT every 2 minutes
-  - Listen for and execute commands
-  - Send acknowledgments
+#### Acknowledgment Flow
+```
+Device Layer → MQTT Broker Layer → Backend Services (MQTT Service) → Data Layer (CommandLog, DeviceState)
+```
 
-#### 2. Backend Server (`src/backend/server.js`)
-- **Purpose**: Main application server
-- **Responsibilities**:
-  - Initialize all services
-  - Provide REST API endpoints
-  - Handle graceful shutdown
+#### Schedule Execution Flow
+```
+Data Layer (Schedules) → Backend Services (Scheduler Service) → Backend Services (MQTT Service) → MQTT Broker Layer → Device Layer
+```
 
-#### 3. MQTT Service (`src/backend/services/mqttService.js`)
-- **Purpose**: Handle all MQTT communication
-- **Responsibilities**:
-  - Connect to MQTT broker
-  - Subscribe to device topics
-  - Publish commands to devices
-  - Handle acknowledgments
-  - Implement retry logic (up to 3 attempts)
-
-#### 4. Scheduler Service (`src/backend/services/schedulerService.js`)
-- **Purpose**: Manage recurring schedules
-- **Responsibilities**:
-  - Create cron jobs from schedules
-  - Execute scheduled commands
-  - Track execution history
-
-#### 5. MongoDB Models
-- **SensorData**: Stores sensor readings
-- **Schedule**: Stores recurring schedules
-- **DeviceState**: Stores current device state
-- **CommandLog**: Stores command history
+#### Pre-Clean Flow
+```
+Client Layer → Backend Services (REST API) → Backend Services (PreClean Service) → Backend Services (MQTT Service) → MQTT Broker Layer → Device Layer
+```
 
 ---
 
-## Prerequisites
+## MQTT Communication
 
-Before you start, make sure you have these installed:
+### MQTT Protocol
+
+**MQTT** (Message Queue Telemetry Transport) is the message protocol used for communication between IoT device and backend service. It follows a publisher-subscriber model.
+
+### MQTT Topics
+
+- `device/AIR_PURIFIER_001/data` → Device sends sensor data to this topic
+- `device/AIR_PURIFIER_001/command` → Backend sends commands to device
+- `device/AIR_PURIFIER_001/ack` → Device sends acknowledgements back to backend
+
+### Command Types
+
+- **setFanSpeed** → Changes the fan speed (1-5)
+- **turnOff** → Sets the fan to offline
+- **turnOn** → Turn the device online
+
+### Message Formats
+
+#### Sensor Data (Device → Backend)
+```json
+{
+  "deviceId": "AIR_PURIFIER_001",
+  "timestamp": "2024-12-26T10:00:00.000Z",
+  "temperature": 25.5,
+  "humidity": 60.2,
+  "pm25": 35.7,
+  "fanSpeed": 2,
+  "powerOn": true
+}
+```
+
+#### Command (Backend → Device)
+```json
+{
+  "commandId": "550e8400-e29b-41d4-a716-446655440000",
+  "action": "setFanSpeed",
+  "value": 3,
+  "timestamp": "2024-12-26T10:00:00.000Z"
+}
+```
+
+#### Acknowledgment (Device → Backend)
+```json
+{
+  "deviceId": "AIR_PURIFIER_001",
+  "commandId": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "success",
+  "message": "Fan speed set to 3"
+}
+```
+
+---
+
+## Database Models
+
+### SensorData Model
+Stores historic sensor data for analytics and restoration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| deviceId | String | Device identifier |
+| timestamp | Date | When data was recorded |
+| temperature | Number | Temperature in Celsius |
+| humidity | Number | Humidity percentage |
+| pm25 | Number | Particulate Matter 2.5 |
+| fanSpeed | Number | Current fan speed (0-5) |
+| powerOn | Boolean | Device power status |
+
+### DeviceState Model
+Stores current device state for fast lookups.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| deviceId | String | Device identifier |
+| currentFanSpeed | Number | Current fan speed |
+| powerOn | Boolean | Power status |
+| isOnline | Boolean | Online status |
+| lastSeen | Date | Last communication |
+
+### Schedule Model
+Stores recurring schedule definitions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| deviceId | String | Device identifier |
+| day | String | Day of week (Monday, Tuesday, etc.) |
+| startTime | String | Start time (HH:MM) |
+| endTime | String | End time (HH:MM) |
+| fanSpeed | Number | Target fan speed (1-5) |
+| isActive | Boolean | Whether schedule is enabled |
+
+### PreClean Model
+Stores pre-clean command data for temporary overrides.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| deviceId | String | Device identifier |
+| fanSpeed | Number | Target fan speed (1-5) |
+| duration | Number | Duration in minutes |
+| previousState | Object | State before pre-clean |
+| status | String | "active", "completed", "cancelled" |
+
+---
+
+## API Documentation
+
+### Base URL: `http://localhost:3000`
+
+#### Health & Info
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | System health check |
+| GET | `/` | API documentation |
+
+#### Schedule APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/schedule` | Create recurring schedule |
+| GET | `/api/schedule/:deviceId` | Get all schedules for device |
+| GET | `/api/schedule/detail/:scheduleId` | Get specific schedule |
+| PUT | `/api/schedule/:scheduleId` | Update schedule |
+| DELETE | `/api/schedule/:scheduleId` | Delete specific schedule |
+
+#### Pre-Clean APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/preclean` | Start temporary override |
+| POST | `/api/preclean/cancel` | Cancel active pre-clean |
+| GET | `/api/preclean/status/:deviceId` | Get pre-clean status |
+
+#### Device APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/device/:deviceId/data` | Get historical sensor data |
+| GET | `/api/device/:deviceId/latest` | Get latest sensor reading |
+| GET | `/api/device/:deviceId/state` | Get current device state |
+| GET | `/api/device/:deviceId/commands` | Get command history |
+| GET | `/api/device/:deviceId/statistics` | Get device statistics |
+| GET | `/api/device/list/all` | List all devices |
+
+#### Control APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/control/power` | Turn device on/off |
+| POST | `/api/control/fan` | Set fan speed |
+
+#### Device Management APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/devices/register` | Register new device |
+| GET | `/api/devices` | List all registered devices |
+| GET | `/api/devices/:deviceId` | Get device details |
+| PUT | `/api/devices/:deviceId` | Update device |
+| DELETE | `/api/devices/:deviceId` | Delete device |
+| GET | `/api/devices/status/active` | Get active devices |
+
+#### Alias APIs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/alias/current` | Get current test device |
+| POST | `/api/alias/set/:deviceId` | Set test device alias |
+
+### Example API Calls
+
+#### Create Schedule
+```bash
+POST /api/schedule
+{
+  "deviceId": "AIR_PURIFIER_001",
+  "day": "Monday",
+  "startTime": "09:00",
+  "endTime": "17:00",
+  "fanSpeed": 3
+}
+```
+
+#### Start Pre-Clean
+```bash
+POST /api/preclean
+{
+  "deviceId": "AIR_PURIFIER_001",
+  "fanMode": 5,
+  "duration": 10
+}
+```
+
+---
+
+## System Flows
+
+### 1. Sensor Data Flow
+
+**Requirement:** Generate sensor data every 2 minutes with gradual changes (no sudden jumps).
+
+![Sensor Data Flow](images/sensorFlow.png)
+
+**Implementation Steps:**
+1. Device simulator starts and connects to MQTT broker
+2. Connection event fires → Initialize timer (one-time setup)
+3. `setInterval(publishSensorData, 120000)` - 120000ms = 2 minutes
+4. `publishSensorData()` method runs every 2 minutes:
+   - Check if device is powered on (`deviceState.powerOn`)
+   - If OFF → Stop data flow
+   - If ON → Call `updateSensorReadings()`
+   - Create data packet object
+   - Convert to JSON using `JSON.stringify()`
+   - Publish to MQTT topic `device/{deviceId}/data`
+
+**Gradual Value Generation:**
+```javascript
+generateGradualValue(currentValue, min, max) {
+  const maxChange = 5;
+  const change = Math.random() * (maxChange * 2) - maxChange; // ±5
+  const newVal = currentValue + change;
+  return Math.max(min, Math.min(max, newVal)); // Bound check
+}
+```
+
+**Example:**
+- Current: 25.5°C, Min: 15°C, Max: 35°C
+- Change: -2.3 → New: 23.2°C
+- Bounds check: max(15, min(35, 23.2)) = 23.2°C
+
+### 2. Schedule Flow
+
+**Requirement:** Create APIs to manage recurring schedules with priority handling.
+
+![Schedule Flow](images/scheduleFlow.png)
+
+**Priority System:**
+- Multiple schedules → Highest fan speed wins
+- Pre-clean active → Block schedule commands
+- Schedule end → Cancel active pre-cleans
+
+**Implementation Steps:**
+1. **Create Schedule:** `POST /api/schedule` → Save to MongoDB
+2. **Cron Job Creation:** Schedule service reads DB → Creates cron expressions
+3. **Active Jobs:** Store in `activeJobs.set(scheduleId_StartTime, cronJob)`
+4. **Schedule Start:** `executeScheduleStart()` triggered:
+   - Check intervals (currently no interval)
+   - Query active schedules for current time
+   - **Priority Queue:** Handle multiple schedules
+   - **Pre-clean Check:** Block if active pre-clean exists
+   - Send command to device
+   - Update schedule history
+5. **Schedule End:** `executeScheduleEnd()` triggered:
+   - Get active schedules
+   - Check for active pre-cleans → Cancel if found
+   - Turn off device or switch to next priority schedule
+
+**Priority Logic:**
+```
+Multiple Schedules Active:
+├─ Schedule1 (Fan Speed 5) ← Highest Priority
+├─ Schedule2 (Fan Speed 3) ← Blocked
+└─ Schedule3 (Fan Speed 2) ← Blocked
+
+Result: Only Schedule1 executes
+```
+
+### 3. Pre-Clean Flow
+
+**Requirement:** Immediately trigger fan speed change with automatic restoration.
+
+![Pre-Clean Flow](images/precleanFlow.png)
+
+**Fan Mode Logic:**
+- `PRE_CLEAN` → Fan Speed 5 (maximum)
+- `AUTO` → Fan Speed 3
+- `MANUAL` → Custom fan speed
+- `OFF` → Fan Speed 0 (turn off)
+
+**Implementation Steps:**
+1. **API Request:** `POST /api/preclean`
+2. **Get Current State:** Query `DeviceState.findOne({deviceId})`
+3. **Save Previous State:** Store current fan speed and power status
+4. **Determine Target Speed:** Based on fanMode
+5. **Create PreClean Document:** Status 'active'
+6. **Send Command:** Via MQTT Service
+7. **Set Timer:** In-memory `setTimeout(duration)`
+8. **Return Response:** PreClean document to user
+9. **Timer Expires:** Find other active pre-cleans
+10. **Restoration Logic:**
+    - Other pre-cleans active → Restore to most recent
+    - No pre-cleans → Check active schedules
+    - No schedules → Restore to previous state
+11. **Mark Completed:** Update PreClean status
+
+**Stack Behavior:**
+```
+Time: T0 - Original State (Fan Speed 2)
+│
+├─ T1: PreClean1 (Speed 3, 5min) ← Stack Bottom
+│
+├─ T2: PreClean2 (Speed 5, 10min) ← Stack Top
+│
+└─ T3: PreClean2 Completes → Restore to PreClean1 (Speed 3)
+   T4: PreClean1 Completes → Restore to Original (Speed 2)
+```
+
+### 4. State Update Flow
+
+**Purpose:** Maintain single source of truth for device state.
+
+![State Update Flow](images/stateupdate.png)
+
+**State Change Events:**
+- **Sensor Data:** Update from device readings
+- **Command ACK:** Update from command acknowledgments
+- **Pre-Clean Start:** Save state for restoration
+- **API Request:** Read current state
+
+**Implementation:**
+```javascript
+// Sensor Data Update
+handleSensorData(data) {
+  DeviceState.updateOne({deviceId}, {
+    currentFanSpeed: data.fanSpeed,
+    powerOn: data.powerOn,
+    isOnline: true,
+    lastSeen: new Date(),
+    latestSensorData: data
+  }, {upsert: true});
+}
+
+// Command ACK Update
+handleAcknowledgment(ack) {
+  DeviceState.updateOne({deviceId}, {
+    currentFanSpeed: ack.fanSpeed,
+    powerOn: ack.powerOn,
+    lastSeen: new Date()
+  });
+}
+```
+
+### 5. Command & Acknowledgment Flow
+
+**Requirement:** Reliable command delivery with retry mechanism.
+
+![Command & Acknowledgment Flow](images/cnAflow.png)
+
+**Command Sources:**
+- Manual Control: `/api/control/fan`, `/api/control/power`
+- Schedule: Automated cron jobs
+- Pre-Clean: Temporary overrides
+
+**Implementation Steps:**
+1. **Generate Command:** Create UUID for tracking
+2. **Create CommandLog:** Status 'pending'
+3. **Priority Check:** Handle schedule/pre-clean priorities
+4. **Publish Command:** `device/{deviceId}/command` (QoS 1)
+5. **Update Status:** 'sent' after publishing
+6. **Set Timeout:** 30-second retry timer
+7. **Device Execution:** Device receives and executes
+8. **ACK Response:** Device publishes acknowledgment
+9. **Update Success:** Clear timeout, update status to 'acknowledged'
+10. **Update DeviceState:** Reflect new device state
+
+**Retry Logic:**
+```javascript
+const MAX_RETRIES = 3;
+const RETRY_TIMEOUT = 30000; // 30 seconds
+
+for (let retry = 0; retry < MAX_RETRIES; retry++) {
+  publishCommand();
+  const ackReceived = await waitForAck(RETRY_TIMEOUT);
+  if (ackReceived) {
+    updateStatus('acknowledged');
+    break;
+  }
+  if (retry === MAX_RETRIES - 1) {
+    updateStatus('timeout');
+  }
+}
+```
+
+**Buffer Management:**
+- Multiple commands can be pending simultaneously
+- `pendingCommands` Map tracks active commands
+- Commands cleared on ACK or timeout
+- Prevents duplicate commands
+
+**Error Handling:**
+- **Timeout:** Command marked as 'timeout' after max retries
+- **Device Offline:** Commands queued until device reconnects
+- **Invalid Commands:** Rejected with error status
+- **Duplicate ACKs:** Ignored if command already acknowledged
+
+### Prerequisites
 
 1. **Node.js** (v18 or higher)
-   - Download from: https://nodejs.org/
-   - Check version: `node --version`
-
 2. **MongoDB** (v7.0 or higher)
-   - Download from: https://www.mongodb.com/try/download/community
-   - Or use MongoDB Atlas (cloud): https://www.mongodb.com/cloud/atlas
-   - Check if running: `mongosh` (should connect)
-
 3. **Mosquitto MQTT Broker**
-   - **macOS**: `brew install mosquitto`
-   - **Ubuntu/Debian**: `sudo apt-get install mosquitto mosquitto-clients`
-   - **Windows**: Download from https://mosquitto.org/download/
-   - Check if running: `mosquitto -v`
 
-4. **Git** (for cloning the repository)
-   - Download from: https://git-scm.com/
+### Installation Steps
 
-5. **Postman** (optional, for testing APIs)
-   - Download from: https://www.postman.com/downloads/
-
----
-
-## Installation
-
-### Step 1: Clone the Repository
-
+1. **Clone and install dependencies**:
 ```bash
-git clone <your-repository-url>
+git clone <repository-url>
 cd praan-task
-```
-
-### Step 2: Install Dependencies
-
-```bash
 npm install
 ```
 
-This will install all required packages:
-- `express` - Web framework
-- `mqtt` - MQTT client
-- `mongoose` - MongoDB ODM
-- `node-cron` - Job scheduler
-- `winston` - Logger
-- `cors` - Cross-origin support
-- `dotenv` - Environment variables
-
-### Step 3: Configure Environment Variables
-
-Create a `.env` file in the root directory:
-
+2. **Configure environment**:
 ```bash
 cp env.example .env
+# Edit .env with your settings
 ```
 
-Edit `.env` file with your configuration:
+3. **Start MongoDB**:
+```bash
+mongod
+```
+
+4. **Start Mosquitto MQTT Broker**:
+```bash
+mosquitto -c mosquitto/config/mosquitto.conf
+```
+
+5. **Start Backend Server**:
+```bash
+npm start
+# or for development:
+npm run dev
+```
+
+6. **Start Device Simulator**:
+```bash
+npm run simulator
+```
+
+### Environment Configuration
 
 ```env
 # MQTT Broker Configuration
@@ -249,893 +601,72 @@ NODE_ENV=development
 
 # Device Configuration
 DEVICE_ID=AIR_PURIFIER_001
-
-# Retry Configuration
-MAX_RETRIES=3
-RETRY_TIMEOUT=30000
-```
-
-### Step 4: Start Services
-
-#### Option A: Using Docker Compose (Recommended)
-
-This starts everything (MongoDB, Mosquitto, Backend) in containers:
-
-```bash
-docker-compose up -d
-```
-
-To view logs:
-```bash
-docker-compose logs -f
-```
-
-To stop:
-```bash
-docker-compose down
-```
-
-#### Option B: Manual Setup
-
-**Terminal 1 - Start MongoDB:**
-```bash
-mongod --dbpath /path/to/data/directory
-```
-
-**Terminal 2 - Start Mosquitto:**
-```bash
-mosquitto -c mosquitto/config/mosquitto.conf
-```
-
-**Terminal 3 - Start Backend Server:**
-```bash
-npm start
-# or for development with auto-reload:
-npm run dev
-```
-
-**Terminal 4 - Start Device Simulator:**
-```bash
-npm run simulator
 ```
 
 ---
 
-## Running the System
+## Test Cases
 
-### Quick Start Guide
-
-1. **Start all services** (using Docker Compose or manually as shown above)
-
-2. **Verify backend is running**:
-   ```bash
-   curl http://localhost:3000/health
-   ```
-   
-   You should see:
-   ```json
-   {
-     "status": "ok",
-     "timestamp": "2024-12-26T...",
-     "services": {
-       "mongodb": "connected",
-       "mqtt": "connected"
-     }
-   }
-   ```
-
-3. **Check device simulator logs**:
-   - You should see sensor data being published every 2 minutes
-   - Look for `[PUBLISHED] Sensor data sent to backend`
-
-4. **Import Postman collection**:
-   - Open Postman
-   - Click Import
-   - Select `postman/Praan-IoT-Backend.postman_collection.json`
-   - Start testing APIs!
+| Test Case | API Call | Expected Output |
+|-----------|----------|-----------------|
+| Turn on power with fan speed 0 | `POST /api/control/power` | Device turns online, auto-off after 10s |
+| Set Fan Speed | `POST /api/control/fan` | Fan speed set to specified value |
+| Turn fan offline | `POST /api/control/power` | Device turns offline |
+| Create schedule | `POST /api/schedule` | Schedule created, cron job active |
+| Start Pre-Clean | `POST /api/preclean` | Pre-clean starts, overrides schedule |
+| Auto Restore | Wait for duration | Fan restores to previous state |
+| Schedule Execution | Wait for time | Device turns on/off automatically |
 
 ---
 
-## API Documentation
-
-### Base URL
-```
-http://localhost:3000
-```
-
-### 1. Schedule API
-
-#### Create Schedule
-Create a recurring schedule for a device.
-
-**Endpoint**: `POST /api/schedule`
-
-**Request Body**:
-```json
-{
-  "deviceId": "AIR_PURIFIER_001",
-  "day": "Monday",
-  "startTime": "09:00",
-  "endTime": "17:00",
-  "fanSpeed": 3
-}
-```
-
-**Response**:
-```json
-{
-  "success": true,
-  "message": "Schedule created successfully",
-  "data": {
-    "scheduleId": "507f1f77bcf86cd799439011",
-    "deviceId": "AIR_PURIFIER_001",
-    "day": "Monday",
-    "startTime": "09:00",
-    "endTime": "17:00",
-    "fanSpeed": 3,
-    "isActive": true,
-    "createdAt": "2024-12-26T10:00:00.000Z"
-  }
-}
-```
-
-**What it does**:
-- Creates a recurring schedule
-- At 9:00 AM every Monday, device turns on with fan speed 3
-- At 5:00 PM every Monday, device turns off
-- If device is offline, retries up to 3 times
-
-#### Get All Schedules
-**Endpoint**: `GET /api/schedule/:deviceId`
-
-**Example**: `GET /api/schedule/AIR_PURIFIER_001`
-
-**Response**:
-```json
-{
-  "success": true,
-  "count": 2,
-  "data": [
-    {
-      "_id": "507f1f77bcf86cd799439011",
-      "deviceId": "AIR_PURIFIER_001",
-      "day": "Monday",
-      "startTime": "09:00",
-      "endTime": "17:00",
-      "fanSpeed": 3,
-      "isActive": true
-    }
-  ]
-}
-```
-
-#### Delete Schedule
-**Endpoint**: `DELETE /api/schedule/:scheduleId`
-
-**Example**: `DELETE /api/schedule/507f1f77bcf86cd799439011`
-
----
-
-### 2. Pre-Clean API
-
-#### Start Pre-Clean
-Temporarily override fan speed for a specified duration.
-
-**Endpoint**: `POST /api/preclean`
-
-**Request Body**:
-```json
-{
-  "deviceId": "AIR_PURIFIER_001",
-  "fanMode": 5,
-  "duration": 10
-}
-```
-
-**Parameters**:
-- `fanMode`: Fan speed (1-5, where 5 is maximum)
-- `duration`: Duration in minutes (1-60)
-
-**Response**:
-```json
-{
-  "success": true,
-  "message": "Pre-clean started successfully",
-  "data": {
-    "deviceId": "AIR_PURIFIER_001",
-    "fanMode": 5,
-    "duration": 10,
-    "previousFanSpeed": 2,
-    "startedAt": "2024-12-26T10:00:00.000Z",
-    "willEndAt": "2024-12-26T10:10:00.000Z",
-    "status": "Device will run at maximum power and then return to previous state"
-  }
-}
-```
-
-**What it does**:
-1. Saves current fan speed (e.g., 2)
-2. Immediately sets fan to requested speed (e.g., 5)
-3. After duration (e.g., 10 minutes), restores previous speed (2)
-
-#### Cancel Pre-Clean
-**Endpoint**: `POST /api/preclean/cancel`
-
-**Request Body**:
-```json
-{
-  "deviceId": "AIR_PURIFIER_001"
-}
-```
-
-#### Get Pre-Clean Status
-**Endpoint**: `GET /api/preclean/status/:deviceId`
-
-**Example**: `GET /api/preclean/status/AIR_PURIFIER_001`
-
----
-
-### 3. Device API
-
-#### Get Sensor Data
-**Endpoint**: `GET /api/device/:deviceId/data`
-
-**Query Parameters**:
-- `limit`: Number of records (default: 100)
-- `startDate`: Start date (ISO format)
-- `endDate`: End date (ISO format)
-
-**Example**: `GET /api/device/AIR_PURIFIER_001/data?limit=50`
-
-**Response**:
-```json
-{
-  "success": true,
-  "count": 50,
-  "data": [
-    {
-      "_id": "507f1f77bcf86cd799439011",
-      "deviceId": "AIR_PURIFIER_001",
-      "timestamp": "2024-12-26T10:00:00.000Z",
-      "temperature": 25.5,
-      "humidity": 60.2,
-      "pm1": 15.3,
-      "pm25": 35.7,
-      "pm10": 50.1,
-      "sound": 45.2,
-      "voc": 30.5,
-      "networkStrength": 85,
-      "fanSpeed": 2,
-      "powerOn": true
-    }
-  ]
-}
-```
-
-#### Get Latest Sensor Data
-**Endpoint**: `GET /api/device/:deviceId/latest`
-
-#### Get Device State
-**Endpoint**: `GET /api/device/:deviceId/state`
-
-**Response**:
-```json
-{
-  "success": true,
-  "data": {
-    "deviceId": "AIR_PURIFIER_001",
-    "currentFanSpeed": 2,
-    "powerOn": true,
-    "isOnline": true,
-    "lastSeen": "2024-12-26T10:00:00.000Z",
-    "preCleanState": {
-      "isActive": false
-    },
-    "latestSensorData": {
-      "temperature": 25.5,
-      "humidity": 60.2,
-      "pm25": 35.7,
-      "networkStrength": 85
-    }
-  }
-}
-```
-
-#### Get Statistics
-**Endpoint**: `GET /api/device/:deviceId/statistics?hours=24`
-
-**Response**:
-```json
-{
-  "success": true,
-  "data": {
-    "temperature": {
-      "min": 20.1,
-      "max": 28.5,
-      "avg": 24.3
-    },
-    "humidity": {
-      "min": 45.2,
-      "max": 75.8,
-      "avg": 60.5
-    },
-    "pm25": {
-      "min": 10.5,
-      "max": 85.2,
-      "avg": 42.3
-    },
-    "dataPoints": 720,
-    "timeRange": {
-      "start": "2024-12-25T10:00:00.000Z",
-      "end": "2024-12-26T10:00:00.000Z"
-    }
-  }
-}
-```
-
----
-
-## MQTT Topics and Message Formats
-
-### Topics Structure
-
-```
-device/{deviceId}/data      - Device publishes sensor data
-device/{deviceId}/command   - Backend publishes commands
-device/{deviceId}/ack       - Device publishes acknowledgments
-```
-
-### Message Formats
-
-#### 1. Sensor Data (Device → Backend)
-
-**Topic**: `device/AIR_PURIFIER_001/data`
-
-**Message**:
-```json
-{
-  "deviceId": "AIR_PURIFIER_001",
-  "timestamp": "2024-12-26T10:00:00.000Z",
-  "networkStrength": 85,
-  "temperature": 25.5,
-  "humidity": 60.2,
-  "pm1": 15.3,
-  "pm25": 35.7,
-  "pm10": 50.1,
-  "sound": 45.2,
-  "voc": 30.5,
-  "fanSpeed": 2,
-  "powerOn": true
-}
-```
-
-**Published**: Every 2 minutes automatically
-
-#### 2. Command (Backend → Device)
-
-**Topic**: `device/AIR_PURIFIER_001/command`
-
-**Set Fan Speed**:
-```json
-{
-  "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "action": "setFanSpeed",
-  "value": 3,
-  "timestamp": "2024-12-26T10:00:00.000Z"
-}
-```
-
-**Turn Off**:
-```json
-{
-  "commandId": "550e8400-e29b-41d4-a716-446655440001",
-  "action": "turnOff",
-  "value": 0,
-  "timestamp": "2024-12-26T10:00:00.000Z"
-}
-```
-
-**Turn On**:
-```json
-{
-  "commandId": "550e8400-e29b-41d4-a716-446655440002",
-  "action": "turnOn",
-  "value": 2,
-  "timestamp": "2024-12-26T10:00:00.000Z"
-}
-```
-
-#### 3. Acknowledgment (Device → Backend)
-
-**Topic**: `device/AIR_PURIFIER_001/ack`
-
-**Success**:
-```json
-{
-  "deviceId": "AIR_PURIFIER_001",
-  "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "success",
-  "message": "Fan speed set to 3",
-  "timestamp": "2024-12-26T10:00:01.000Z",
-  "currentState": {
-    "powerOn": true,
-    "fanSpeed": 3
-  }
-}
-```
-
-**Error**:
-```json
-{
-  "deviceId": "AIR_PURIFIER_001",
-  "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "error",
-  "message": "Invalid fan speed: 10. Must be between 0 and 5.",
-  "timestamp": "2024-12-26T10:00:01.000Z"
-}
-```
-
----
-
-## Database Schemas
-
-### 1. SensorData Collection
-
-```javascript
-{
-  deviceId: String,           // "AIR_PURIFIER_001"
-  timestamp: Date,            // When data was recorded
-  networkStrength: Number,    // 0-100
-  temperature: Number,        // Celsius
-  humidity: Number,           // Percentage
-  pm1: Number,               // Particulate Matter 1.0
-  pm25: Number,              // Particulate Matter 2.5
-  pm10: Number,              // Particulate Matter 10
-  sound: Number,             // Decibels
-  voc: Number,               // Volatile Organic Compounds
-  fanSpeed: Number,          // 0-5
-  powerOn: Boolean,          // true/false
-  createdAt: Date,           // Auto-generated
-  updatedAt: Date            // Auto-generated
-}
-```
-
-**Indexes**:
-- `deviceId` (ascending)
-- `timestamp` (descending)
-- Compound: `deviceId + timestamp`
-
-### 2. Schedule Collection
-
-```javascript
-{
-  deviceId: String,          // "AIR_PURIFIER_001"
-  day: String,              // "Monday", "Tuesday", etc.
-  startTime: String,        // "09:00"
-  endTime: String,          // "17:00"
-  fanSpeed: Number,         // 1-5
-  isActive: Boolean,        // true/false
-  lastExecuted: Date,       // Last execution time
-  executionHistory: [{
-    executedAt: Date,
-    status: String,         // "success", "failed", "retrying"
-    message: String,
-    retryCount: Number
-  }],
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-### 3. DeviceState Collection
-
-```javascript
-{
-  deviceId: String,          // Unique device ID
-  currentFanSpeed: Number,   // 0-5
-  powerOn: Boolean,          // true/false
-  isOnline: Boolean,         // true/false
-  lastSeen: Date,           // Last data received
-  preCleanState: {
-    isActive: Boolean,
-    previousFanSpeed: Number,
-    startedAt: Date,
-    duration: Number        // minutes
-  },
-  latestSensorData: {
-    temperature: Number,
-    humidity: Number,
-    pm25: Number,
-    networkStrength: Number,
-    timestamp: Date
-  },
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
-### 4. CommandLog Collection
-
-```javascript
-{
-  commandId: String,         // UUID
-  deviceId: String,
-  action: String,           // "setFanSpeed", "turnOff", "turnOn"
-  value: Number,            // Command value
-  source: String,           // "schedule", "preclean", "manual", "restore"
-  status: String,           // "pending", "sent", "acknowledged", "failed", "timeout"
-  sentAt: Date,
-  acknowledgedAt: Date,
-  retryCount: Number,
-  errorMessage: String,
-  deviceResponse: {
-    status: String,
-    message: String,
-    timestamp: Date
-  },
-  createdAt: Date,
-  updatedAt: Date
-}
-```
-
----
-
-## AWS Deployment
-
-### Architecture on AWS
-
-```
-Internet
-   |
-   v
-Application Load Balancer (ALB)
-   |
-   v
-ECS Fargate (Backend Container)
-   |
-   +-- MongoDB (DocumentDB or Atlas)
-   +-- MQTT Broker (AWS IoT Core or EC2)
-```
-
-### Deployment Steps
-
-#### 1. Prerequisites
-
-```bash
-# Install AWS CLI
-brew install awscli  # macOS
-# or
-pip install awscli   # Python
-
-# Configure AWS credentials
-aws configure
-```
-
-#### 2. Deploy Infrastructure
-
-```bash
-cd aws
-chmod +x deploy.sh
-./deploy.sh production
-```
-
-This script will:
-1. Create CloudFormation stack (VPC, subnets, security groups, ALB, ECS cluster)
-2. Create ECR repository
-3. Build and push Docker image
-4. Output Load Balancer URL
-
-#### 3. Configure Secrets
-
-Store sensitive data in AWS Secrets Manager:
-
-```bash
-# MongoDB URI
-aws secretsmanager create-secret \
-  --name praan/mongodb-uri \
-  --secret-string "mongodb://your-mongodb-uri"
-
-# MQTT Broker URL
-aws secretsmanager create-secret \
-  --name praan/mqtt-broker \
-  --secret-string "mqtt://your-mqtt-broker"
-```
-
-#### 4. Create ECS Task Definition
-
-Edit `aws/ecs-task-definition.json` with your values, then:
-
-```bash
-aws ecs register-task-definition \
-  --cli-input-json file://ecs-task-definition.json
-```
-
-#### 5. Create ECS Service
-
-```bash
-aws ecs create-service \
-  --cluster praan-iot-production \
-  --service-name praan-backend-service \
-  --task-definition praan-backend \
-  --desired-count 2 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx,subnet-yyy],securityGroups=[sg-xxx],assignPublicIp=ENABLED}" \
-  --load-balancers "targetGroupArn=arn:aws:elasticloadbalancing:...,containerName=praan-backend,containerPort=3000"
-```
-
-### MongoDB Options on AWS
-
-**Option 1: Amazon DocumentDB** (Recommended)
-- Fully managed MongoDB-compatible database
-- Automatic backups and scaling
-- Higher cost but easier management
-
-**Option 2: MongoDB Atlas**
-- Official MongoDB cloud service
-- Free tier available
-- Easy to set up
-
-**Option 3: Self-hosted on EC2**
-- More control but requires management
-- Lower cost for high usage
-
-### MQTT Broker Options on AWS
-
-**Option 1: AWS IoT Core** (Recommended)
-- Fully managed MQTT broker
-- Scales automatically
-- Integrates with other AWS services
-
-**Option 2: Self-hosted Mosquitto on EC2**
-- More control
-- Lower cost for high message volume
-
----
-
-## Testing
-
-### Manual Testing with Postman
-
-1. Import collection: `postman/Praan-IoT-Backend.postman_collection.json`
-2. Set variables:
-   - `base_url`: `http://localhost:3000`
-   - `device_id`: `AIR_PURIFIER_001`
-3. Run requests in order:
-   - Health Check
-   - Get Device State
-   - Create Schedule
-   - Start Pre-Clean
-   - Get Sensor Data
-
-### Testing Schedule Flow
-
-1. **Create a schedule** for today (adjust day and time):
-   ```json
-   POST /api/schedule
-   {
-     "deviceId": "AIR_PURIFIER_001",
-     "day": "Thursday",
-     "startTime": "14:30",
-     "endTime": "14:35",
-     "fanSpeed": 4
-   }
-   ```
-
-2. **Wait for start time** - Watch device simulator logs
-
-3. **Check command log**:
-   ```
-   GET /api/device/AIR_PURIFIER_001/commands
-   ```
-
-4. **Verify device state**:
-   ```
-   GET /api/device/AIR_PURIFIER_001/state
-   ```
-
-### Testing Pre-Clean Flow
-
-1. **Check current state**:
-   ```
-   GET /api/device/AIR_PURIFIER_001/state
-   ```
-   Note the current fan speed
-
-2. **Start pre-clean** (1 minute for quick test):
-   ```json
-   POST /api/preclean
-   {
-     "deviceId": "AIR_PURIFIER_001",
-     "fanMode": 5,
-     "duration": 1
-   }
-   ```
-
-3. **Watch device simulator** - Fan speed should change to 5
-
-4. **Wait 1 minute** - Fan speed should restore to previous value
-
-5. **Verify restoration**:
-   ```
-   GET /api/device/AIR_PURIFIER_001/state
-   ```
-
----
-
-## Troubleshooting
-
-### Device Simulator Not Connecting
-
-**Problem**: Device simulator shows connection errors
-
-**Solutions**:
-1. Check if Mosquitto is running:
-   ```bash
-   ps aux | grep mosquitto
-   ```
-2. Test MQTT broker:
-   ```bash
-   mosquitto_sub -h localhost -t test
-   ```
-3. Check MQTT_BROKER_URL in `.env`
-
-### Backend Can't Connect to MongoDB
-
-**Problem**: Backend shows MongoDB connection errors
-
-**Solutions**:
-1. Check if MongoDB is running:
-   ```bash
-   mongosh
-   ```
-2. Verify MONGODB_URI in `.env`
-3. Check MongoDB logs:
-   ```bash
-   tail -f /usr/local/var/log/mongodb/mongo.log  # macOS
-   ```
-
-### Commands Not Reaching Device
-
-**Problem**: Commands sent but device doesn't respond
-
-**Solutions**:
-1. Check device simulator is running
-2. Verify MQTT topics match
-3. Check command log:
-   ```
-   GET /api/device/AIR_PURIFIER_001/commands
-   ```
-4. Look for retry attempts in backend logs
-
-### Schedule Not Executing
-
-**Problem**: Scheduled time passed but nothing happened
-
-**Solutions**:
-1. Check schedule is active:
-   ```
-   GET /api/schedule/AIR_PURIFIER_001
-   ```
-2. Verify day and time are correct (use current day for testing)
-3. Check backend logs for cron job execution
-4. Ensure backend server was running at scheduled time
-
-### Pre-Clean Not Restoring
-
-**Problem**: Pre-clean finished but fan speed didn't restore
-
-**Solutions**:
-1. Check pre-clean status:
-   ```
-   GET /api/preclean/status/AIR_PURIFIER_001
-   ```
-2. Check backend logs for timeout execution
-3. Verify device received restore command:
-   ```
-   GET /api/device/AIR_PURIFIER_001/commands
-   ```
+## System Flows
+
+### Sensor Data Flow
+1. Device publishes sensor data every 2 minutes
+2. Backend receives via MQTT and stores in MongoDB
+3. Device state is updated with latest readings
+
+### Schedule Flow
+1. API creates schedule in MongoDB
+2. Cron job triggers at scheduled time
+3. Command sent to device via MQTT
+4. Device acknowledges command execution
+
+### Pre-Clean Flow
+1. Current device state is saved
+2. Immediate fan speed change command sent
+3. Timer set for specified duration
+4. Auto-restore to previous state after completion
+
+### Command & Acknowledgement Flow
+1. Command generated with unique ID
+2. Published to MQTT command topic
+3. Device executes and sends acknowledgment
+4. Backend updates command status and device state
 
 ---
 
 ## Trade-offs and Design Decisions
 
 ### 1. MQTT vs HTTP for Device Communication
-
-**Decision**: Used MQTT
-
-**Why**:
-- **Pros**: Lightweight, designed for IoT, supports pub/sub, low bandwidth
-- **Cons**: Requires additional broker, more complex setup
-- **Trade-off**: Better for real-time IoT communication despite added complexity
+- **Decision**: Used MQTT
+- **Why**: Lightweight, designed for IoT, supports pub/sub, low bandwidth
+- **Trade-off**: Better real-time communication despite needing MQTT broker
 
 ### 2. MongoDB vs SQL Database
-
-**Decision**: Used MongoDB
-
-**Why**:
-- **Pros**: Flexible schema, good for time-series data, easy to scale horizontally
-- **Cons**: No strict schema enforcement, eventual consistency
+- **Decision**: Used MongoDB
+- **Why**: Flexible schema, good for time-series data, easy horizontal scaling
 - **Trade-off**: Flexibility and scalability over strict data integrity
 
-### 3. Cron Jobs vs Queue System
+### 3. Simple Cron vs Queue System
+- **Decision**: Used node-cron
+- **Why**: Simple setup, built into Node.js, perfect for demo
+- **Trade-off**: Easy to understand but jobs lost on server restart
 
-**Decision**: Used node-cron
-
-**Why**:
-- **Pros**: Simple, built-in, no external dependencies
-- **Cons**: Not distributed, lost if server restarts
-- **Trade-off**: Simplicity over distributed reliability
-- **For Production**: Consider using AWS EventBridge or Bull Queue
-
-### 4. In-Memory Timers vs Database for Pre-Clean
-
-**Decision**: Used in-memory timers with database backup
-
-**Why**:
-- **Pros**: Fast, simple, accurate timing
-- **Cons**: Lost on server restart
-- **Trade-off**: Performance over persistence
-- **Mitigation**: Store state in database to recover on restart
-
-### 5. Retry Logic: Timeout-Based vs Acknowledgment-Based
-
-**Decision**: Used acknowledgment-based with timeout fallback
-
-**Why**:
-- **Pros**: Knows exactly when device received command
-- **Cons**: More complex, requires device to send acks
-- **Trade-off**: Reliability over simplicity
-
-### 6. Single Device Simulator vs Multiple
-
-**Decision**: Single device simulator
-
-**Why**:
-- **Pros**: Simpler to understand and test
-- **Cons**: Can't test multi-device scenarios
-- **Trade-off**: Simplicity for demonstration purposes
-- **For Production**: Easy to run multiple instances with different DEVICE_IDs
-
----
-
-## Assumptions
-
-### Device Assumptions
-
-1. **Device ID is unique** - Each device has a unique identifier
-2. **Device is always reachable** - Eventually (within retry period)
-3. **Device has stable internet** - Network strength varies but connection maintained
-4. **Sensor data is always valid** - No corrupt or malformed data
-5. **Device clock is synchronized** - Timestamps are accurate
-
-### System Assumptions
-
-1. **Single timezone** - All schedules use server timezone (configurable)
-2. **No authentication** - For simplicity, no user authentication (add in production)
-3. **No device authentication** - MQTT allows anonymous connections (use TLS + auth in production)
-4. **Unlimited storage** - No data retention policy (implement in production)
-5. **Single backend instance** - No load balancing or clustering (scale with AWS)
-
-### Schedule Assumptions
-
-1. **Weekly schedules only** - No daily, monthly, or custom patterns
-2. **One schedule per day per device** - No overlapping schedules
-3. **Same day start/end** - Schedule doesn't cross midnight
-4. **Fixed timezone** - No per-device timezone support
-
-### Pre-Clean Assumptions
-
-1. **One pre-clean at a time** - New pre-clean cancels previous
-2. **Restore always works** - Device will accept restore command
-3. **Duration is accurate** - Timer precision is sufficient
-4. **No persistence** - Pre-clean state lost on server restart (mitigated by database)
-
-### Network Assumptions
-
-1. **MQTT broker is reliable** - No broker failures
-2. **Low latency** - Commands reach device quickly
-3. **No message loss** - MQTT QoS 1 ensures delivery
-4. **Broker is local or nearby** - Low network latency
+### 4. In-Memory Timers vs Database Timers
+- **Decision**: Used setTimeout with database backup
+- **Why**: Pre-clean needs precise timing, in-memory is fast and accurate
+- **Trade-off**: Speed and precision but timers lost on restart
 
 ---
 
@@ -1143,72 +674,65 @@ aws ecs create-service \
 
 ```
 praan-task/
+├── frontend/
+│   └── index.html                          # Simple frontend (if needed)
+├── mosquitto/
+│   └── config/
+│       └── mosquitto.conf                  # Local MQTT broker config
+├── postman/
+│   └── Praan-IoT-Backend.postman_collection.json  # API testing collection
+├── scripts/
+│   └── setup-devices.js                   # Device registration script
 ├── src/
 │   ├── backend/
-│   │   ├── models/              # MongoDB schemas
-│   │   │   ├── SensorData.js
-│   │   │   ├── Schedule.js
-│   │   │   ├── DeviceState.js
-│   │   │   └── CommandLog.js
-│   │   ├── routes/              # API routes
-│   │   │   ├── scheduleRoutes.js
-│   │   │   ├── precleanRoutes.js
-│   │   │   └── deviceRoutes.js
-│   │   ├── services/            # Business logic
-│   │   │   ├── mqttService.js
-│   │   │   └── schedulerService.js
-│   │   ├── utils/               # Utilities
-│   │   │   └── logger.js
-│   │   └── server.js            # Main server file
+│   │   ├── middleware/
+│   │   │   └── deviceAlias.js              # Device alias system
+│   │   ├── models/
+│   │   │   ├── CommandLog.js               # Command history
+│   │   │   ├── Device.js                   # Device registration model
+│   │   │   ├── DeviceState.js              # Real-time device state
+│   │   │   ├── PreClean.js                 # Pre-clean operations
+│   │   │   ├── Schedule.js                 # Recurring schedules
+│   │   │   └── SensorData.js               # Sensor readings
+│   │   ├── routes/
+│   │   │   ├── aliasRoutes.js              # Device alias management
+│   │   │   ├── controlRoutes.js            # Manual device control
+│   │   │   ├── deviceManagementRoutes.js   # Device CRUD operations
+│   │   │   ├── deviceRoutes.js             # Device data & state
+│   │   │   ├── precleanRoutes.js           # Pre-clean operations
+│   │   │   └── scheduleRoutes.js           # Schedule management
+│   │   ├── services/
+│   │   │   ├── mqttService.js              # MQTT communication
+│   │   │   ├── preCleanService.js          # Pre-clean logic
+│   │   │   └── schedulerService.js         # Schedule execution
+│   │   ├── utils/
+│   │   │   └── logger.js                   # Logging utility
+│   │   └── server.js                       # Main server file
+│   ├── logs/
+│   │   ├── combined.log                    # All logs
+│   │   └── error.log                       # Error logs only
 │   └── simulator/
-│       └── device-simulator.js  # IoT device simulator
-├── aws/                         # AWS deployment files
-│   ├── cloudformation-template.yaml
-│   ├── ecs-task-definition.json
-│   └── deploy.sh
-├── mosquitto/                   # MQTT broker config
-│   └── config/
-│       └── mosquitto.conf
-├── postman/                     # API collection
-│   └── Praan-IoT-Backend.postman_collection.json
-├── logs/                        # Application logs
-├── Dockerfile                   # Docker image
-├── docker-compose.yml           # Local development
-├── package.json                 # Dependencies
-├── env.example                  # Environment template
-└── README.md                    # This file
+│       └── device-simulator.js             # IoT device simulator
+├── .env                                    # Environment variables
+├── .gitignore                              # Git ignore rules
+├── env.example                             # Environment template
+├── package-lock.json                       # Dependency lock file
+├── package.json                            # Project dependencies & scripts
+└── README.md                               # Project documentation
 ```
 
 ---
 
-## Support and Contact
+## Support
 
 For questions or issues:
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Review logs in `logs/` directory
-3. Check MQTT broker logs
-4. Verify all services are running
+1. Check logs in `src/logs/` directory
+2. Verify all services are running
+3. Test MQTT broker connectivity
+4. Use Postman collection for API testing
 
 ---
 
 ## License
 
 This project is created for demonstration purposes.
-
----
-
-## Next Steps
-
-After getting the system running:
-
-1. **Explore the APIs** - Use Postman collection to test all endpoints
-2. **Monitor logs** - Watch backend and device logs to understand flow
-3. **Test edge cases** - Try offline devices, invalid commands, etc.
-4. **Scale up** - Run multiple device simulators with different IDs
-5. **Add features** - Authentication, notifications, data visualization
-6. **Deploy to AWS** - Follow AWS deployment guide for production
-
----
-
-**Happy IoT Development!**
-
